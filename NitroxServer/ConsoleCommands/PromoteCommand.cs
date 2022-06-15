@@ -1,4 +1,5 @@
 ﻿using NitroxModel.DataStructures.GameLogic;
+using NitroxModel.Packets;
 using NitroxServer.ConsoleCommands.Abstract;
 using NitroxServer.ConsoleCommands.Abstract.Type;
 
@@ -8,8 +9,8 @@ namespace NitroxServer.ConsoleCommands
     {
         public PromoteCommand() : base("promote", Perms.MODERATOR, "Sets specific permissions to a user")
         {
-            AddParameter(new TypePlayer("name", true));
-            AddParameter(new TypeEnum<Perms>("perms", true));
+            AddParameter(new TypePlayer("name", true, "The username to change the permissions of"));
+            AddParameter(new TypeEnum<Perms>("perms", true, "Permission level"));
         }
 
         protected override void Execute(CallArgs args)
@@ -27,6 +28,8 @@ namespace NitroxServer.ConsoleCommands
             if (args.IsConsole || permissions < args.Sender.Value.Permissions)
             {
                 targetPlayer.Permissions = permissions;
+
+                // TODO: Send a packet to the player to acknowledge the permision level change
                 SendMessage(args.Sender, $"Updated {targetPlayer.Name}\'s permissions to {permissions}");
                 SendMessageToPlayer(targetPlayer, $"You've been promoted to {permissions}");
             }

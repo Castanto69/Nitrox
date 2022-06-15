@@ -5,8 +5,6 @@ using NitroxClient.GameLogic;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.Unity.Helper;
 using NitroxModel.DataStructures.Util;
-using NitroxModel.Helper;
-using NitroxModel.Logger;
 using NitroxModel.Packets;
 using UnityEngine;
 
@@ -31,11 +29,10 @@ namespace NitroxClient.Communication.Packets.Processors
             GameObject vehicleDockingBayGo = NitroxEntity.RequireObjectFrom(packet.DockId);
 
             Vehicle vehicle = vehicleGo.RequireComponent<Vehicle>();
-            VehicleDockingBay vehicleDockingBay = vehicleDockingBayGo.RequireComponentInChildren<VehicleDockingBay>();
+            VehicleDockingBay vehicleDockingBay = vehicleDockingBayGo.RequireComponent<VehicleDockingBay>();
 
             using (packetSender.Suppress<VehicleUndocking>())
             {
-
                 if (packet.UndockingStart)
                 {
                     StartVehicleUndocking(packet, vehicleGo, vehicle, vehicleDockingBay);
@@ -72,7 +69,7 @@ namespace NitroxClient.Communication.Packets.Processors
         public IEnumerator StartUndockingAnimation(VehicleDockingBay vehicleDockingBay)
         {
             yield return new WaitForSeconds(2.0f);
-            vehicleDockingBay.ReflectionSet("vehicle_docked_param", false);
+            vehicleDockingBay.vehicle_docked_param = false;
         }
 
         private void FinishVehicleUndocking(VehicleUndocking packet, Vehicle vehicle, VehicleDockingBay vehicleDockingBay)
@@ -81,7 +78,7 @@ namespace NitroxClient.Communication.Packets.Processors
             {
                 vehicleDockingBay.SetVehicleUndocked();
             }
-            vehicleDockingBay.ReflectionSet("_dockedVehicle", null);
+            vehicleDockingBay.dockedVehicle = null;
             vehicleDockingBay.CancelInvoke("RepairVehicle");
             vehicle.docked = false;
             Optional<RemotePlayer> player = remotePlayerManager.Find(packet.PlayerId);

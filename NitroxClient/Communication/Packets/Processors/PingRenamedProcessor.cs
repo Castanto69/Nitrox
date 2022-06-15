@@ -3,7 +3,6 @@ using NitroxClient.Communication.Packets.Processors.Abstract;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.Unity.Helper;
 using NitroxModel.DataStructures.Util;
-using NitroxModel.Logger;
 using NitroxModel.Packets;
 using UnityEngine;
 
@@ -44,7 +43,7 @@ namespace NitroxClient.Communication.Packets.Processors
             using (sender.Suppress<PingRenamed>())
             {
                 beacon.beaconLabel.SetLabel(packet.Name);
-                Log.Debug($"Received ping rename: '{packet.Name}' on object '{obj.Value.GetFullName()}' with Nitrox id: '{packet.Id}'");
+                Log.Debug($"Received ping rename: '{packet.Name}' on object '{obj.Value.GetFullHierarchyPath()}' with Nitrox id: '{packet.Id}'");
             }
         }
     }

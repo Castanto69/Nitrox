@@ -4,7 +4,6 @@ using NitroxClient.MonoBehaviours;
 using NitroxClient.Unity.Helper;
 using NitroxModel.DataStructures;
 using NitroxModel.DataStructures.GameLogic;
-using NitroxModel.Logger;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic.Helper
@@ -32,7 +31,7 @@ namespace NitroxClient.GameLogic.Helper
         {
             List<InteractiveChildObjectIdentifier> interactiveChildren = new List<InteractiveChildObjectIdentifier>();
 
-            string constructedObjectsName = constructedObject.GetFullName();
+            string constructedObjectsName = constructedObject.GetFullHierarchyPath();
 
             foreach (Type type in interactiveChildTypes)
             {
@@ -41,7 +40,7 @@ namespace NitroxClient.GameLogic.Helper
                 foreach (Component component in components)
                 {
                     NitroxId id = NitroxEntity.GetId(component.gameObject);
-                    string componentName = component.gameObject.GetFullName();
+                    string componentName = component.gameObject.GetFullHierarchyPath();
                     string relativePathName = componentName.Replace(constructedObjectsName, "");
 
                     // It can happen, that the game object is the constructed object itself. This code prevents to add itself to the child objects

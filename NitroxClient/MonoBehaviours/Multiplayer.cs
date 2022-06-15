@@ -1,21 +1,18 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 using NitroxClient.Communication;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Communication.MultiplayerSession;
 using NitroxClient.Communication.Packets.Processors.Abstract;
 using NitroxClient.GameLogic;
 using NitroxClient.GameLogic.ChatUI;
-using NitroxClient.GameLogic.PlayerModel.Abstract;
-using NitroxClient.GameLogic.PlayerModel.ColorSwap;
-using NitroxClient.MonoBehaviours.DiscordRP;
-using NitroxClient.MonoBehaviours.Gui.InGame;
+using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
+using NitroxClient.GameLogic.PlayerLogic.PlayerModel.ColorSwap;
+using NitroxClient.Helpers;
+using NitroxClient.MonoBehaviours.Discord;
 using NitroxClient.MonoBehaviours.Gui.MainMenu;
 using NitroxModel.Core;
-using NitroxModel.Helper;
-using NitroxModel.Logger;
 using NitroxModel.Packets;
 using NitroxModel.Packets.Processors.Abstract;
 using UnityEngine;
@@ -29,6 +26,7 @@ namespace NitroxClient.MonoBehaviours
 
         private IMultiplayerSession multiplayerSession;
         private PacketReceiver packetReceiver;
+        private ThrottledPacketSender throttledPacketSender;
         public bool InitialSyncCompleted { get; set; }
 
         /// <summary>
@@ -79,6 +77,7 @@ namespace NitroxClient.MonoBehaviours
 
             multiplayerSession = NitroxServiceLocator.LocateService<IMultiplayerSession>();
             packetReceiver = NitroxServiceLocator.LocateService<PacketReceiver>();
+            throttledPacketSender = NitroxServiceLocator.LocateService<ThrottledPacketSender>();
 
             Main = this;
             DontDestroyOnLoad(gameObject);
@@ -89,6 +88,7 @@ namespace NitroxClient.MonoBehaviours
             if (multiplayerSession.CurrentState.CurrentStage != MultiplayerSessionConnectionStage.DISCONNECTED)
             {
                 ProcessPackets();
+                throttledPacketSender.Update();
             }
         }
 
@@ -128,16 +128,12 @@ namespace NitroxClient.MonoBehaviours
         public void InitMonoBehaviours()
         {
             // Gameplay.
+            gameObject.AddComponent<AnimationSender>();
             gameObject.AddComponent<PlayerMovement>();
             gameObject.AddComponent<PlayerDeathBroadcaster>();
             gameObject.AddComponent<PlayerStatsBroadcaster>();
-            gameObject.AddComponent<AnimationSender>();
             gameObject.AddComponent<EntityPositionBroadcaster>();
             gameObject.AddComponent<ThrottledBuilder>();
-
-            // UI.
-            gameObject.AddComponent<LostConnectionModal>();
-            gameObject.AddComponent<PlayerKickedModal>();
         }
 
         public void StopCurrentSession()
@@ -157,19 +153,14 @@ namespace NitroxClient.MonoBehaviours
 
         private static void SetLoadingComplete()
         {
-            PropertyInfo property = PAXTerrainController.main.GetType().GetProperty("isWorking");
-            property.SetValue(PAXTerrainController.main, false, null);
-
-            WaitScreen waitScreen = (WaitScreen)ReflectionHelper.ReflectionGet<WaitScreen>(null, "main", false, true);
-            waitScreen.ReflectionCall("Hide");
-
-            List<WaitScreen.IWaitItem> items = (List<WaitScreen.IWaitItem>)waitScreen.ReflectionGet("items");
-            items.Clear();
+            PAXTerrainController.main.isWorking = false;
+            WaitScreen.main.Hide();
+            WaitScreen.main.items.Clear();
 
             PlayerManager remotePlayerManager = NitroxServiceLocator.LocateService<PlayerManager>();
 
             LoadingScreenVersionText.DisableWarningText();
-            DiscordRPController.Main.InitializeInGame(Main.multiplayerSession.AuthenticationContext.Username, remotePlayerManager.GetTotalPlayerCount(), Main.multiplayerSession.SessionPolicy.MaxConnections, $"{Main.multiplayerSession.IpAddress}:{Main.multiplayerSession.ServerPort}");
+            DiscordClient.InitializeRPInGame(Main.multiplayerSession.AuthenticationContext.Username, remotePlayerManager.GetTotalPlayerCount(), Main.multiplayerSession.SessionPolicy.MaxConnections);
             NitroxServiceLocator.LocateService<PlayerChatManager>().LoadChatKeyHint();
         }
 
@@ -193,8 +184,7 @@ namespace NitroxClient.MonoBehaviours
 
             // UWE developers added noisy logging for non-whitelisted components during serialization.
             // We add NitroxEntiy in here to avoid a large amount of log spam.
-            HashSet<string> whiteListedSerializableComponents = (HashSet<string>)ReflectionHelper.ReflectionGet<ProtobufSerializer>(null, "componentWhitelist", false, true);
-            whiteListedSerializableComponents.Add("NitroxEntity");
+            ProtobufSerializer.componentWhitelist.Add(nameof(NitroxEntity));
         }
 
         private void SceneManager_sceneLoaded(Scene scene, LoadSceneMode loadMode)

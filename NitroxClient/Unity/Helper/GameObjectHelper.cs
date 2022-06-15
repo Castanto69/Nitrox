@@ -9,29 +9,48 @@ namespace NitroxClient.Unity.Helper
 {
     public static class GameObjectHelper
     {
-        public static T RequireComponent<T>(this GameObject o) where T : class
+        public static bool TryGetComponentInChildren<T>(this GameObject go, out T component, bool includeInactive = false) where T : Component
+        {
+            component = go.GetComponentInChildren<T>(includeInactive);
+            return component;
+        }
+
+        public static bool TryGetComponentInParent<T>(this GameObject go, out T component) where T : Component
+        {
+            component = go.GetComponentInParent<T>();
+            return component;
+        }
+
+        public static bool TryGetComponentInChildren<T>(this Component co, out T component, bool includeInactive = false) where T : Component => TryGetComponentInChildren(co.gameObject, out component, includeInactive);
+        public static bool TryGetComponentInParent<T>(this Component co, out T component) where T : Component => TryGetComponentInParent(co.gameObject, out component);
+
+        public static T RequireComponent<T>(this GameObject o) where T : Component
         {
             T component = o.GetComponent<T>();
-            Validate.NotNull(component, $"{o.name} did not have a component of type {typeof(T)}");
+            Validate.IsTrue(component, $"{o.name} did not have a component of type {typeof(T)}");
 
             return component;
         }
 
-        public static T RequireComponentInChildren<T>(this GameObject o, bool includeInactive = false) where T : class
+        public static T RequireComponentInChildren<T>(this GameObject o, bool includeInactive = false) where T : Component
         {
             T component = o.GetComponentInChildren<T>(includeInactive);
-            Validate.NotNull(component, $"{o.name} did not have a component of type {typeof(T)} in its children");
+            Validate.IsTrue(component, $"{o.name} did not have a component of type {typeof(T)} in its children");
 
             return component;
         }
 
-        public static T RequireComponentInParent<T>(this GameObject o) where T : class
+        public static T RequireComponentInParent<T>(this GameObject o) where T : Component
         {
             T component = o.GetComponentInParent<T>();
-            Validate.NotNull(component, $"{o.name} did not have a component of type {typeof(T)} in its parent");
+            Validate.IsTrue(component, $"{o.name} did not have a component of type {typeof(T)} in its parent");
 
             return component;
         }
+
+        public static T RequireComponent<T>(this Component co) where T : Component => RequireComponent<T>(co.gameObject);
+        public static T RequireComponentInChildren<T>(this Component co, bool includeInactive = false) where T : Component => RequireComponentInChildren<T>(co.gameObject, includeInactive);
+        public static T RequireComponentInParent<T>(this Component co) where T : Component => RequireComponentInParent<T>(co.gameObject);
 
         public static Transform RequireTransform(this Transform tf, string name)
         {
@@ -55,7 +74,7 @@ namespace NitroxClient.Unity.Helper
         public static GameObject RequireGameObject(string name)
         {
             GameObject go = GameObject.Find(name);
-            Validate.NotNull(go, "No global GameObject found with " + name + "!");
+            Validate.IsTrue(go, "No global GameObject found with " + name + "!");
 
             return go;
         }
@@ -73,68 +92,36 @@ namespace NitroxClient.Unity.Helper
             {
                 return obj;
             }
+
             return null;
         }
 
-        public static string GetHierarchyPath(this GameObject obj)
+        public static string GetFullHierarchyPath(this Component component)
         {
-            if (!obj)
+            return component ? $"{component.gameObject.GetFullHierarchyPath()} -> {component.GetType().Name}.cs" : "";
+        }
+
+        public static string GetHierarchyPath(this GameObject go, GameObject end)
+        {
+            if (!go || go == end)
             {
                 return "";
             }
 
-            return GetHierarchyPathBuilder(obj, new StringBuilder());
-        }
-
-        public static string GetHierarchyPath(this Component component)
-        {
-            if (!component)
+            if (!go.transform.parent)
             {
-                return "";
+                return go.name;
             }
 
-            // Append component name
-            StringBuilder builder = new StringBuilder();
-            builder.Insert(0, component.name);
-            builder.Insert(0, ".");
-
-            // Append path of GameObject hierarchy
-            return GetHierarchyPathBuilder(component.gameObject, builder);
-        }
-
-        private static string GetHierarchyPathBuilder(this GameObject obj, StringBuilder builder)
-        {
-            Transform parent = obj.transform;
-
-            while (parent)
+            StringBuilder sb = new(go.name);
+            for (GameObject gameObject = go.transform.parent.gameObject;
+                 gameObject && gameObject != end;
+                 gameObject = gameObject.transform.parent ? gameObject.transform.parent.gameObject : null)
             {
-                builder.Insert(0, parent.name);
-                builder.Insert(0, "/");
-                parent = parent.transform.parent;
+                sb.Insert(0, $"{gameObject.name}/");
             }
 
-            return builder.ToString();
-        }
-
-        public static string GetFullName(this GameObject obj)
-        {
-            Stack<string> stack = new Stack<string>();
-            Transform transform = obj.transform;
-
-            while (transform)
-            {
-                stack.Push(transform.name);
-                transform = transform.parent;
-            }
-
-            StringBuilder stringBuilder = new StringBuilder();
-
-            while (stack.Count > 0)
-            {
-                stringBuilder.AppendFormat("/{0}", stack.Pop());
-            }
-
-            return stringBuilder.ToString();
+            return sb.ToString();
         }
     }
 }

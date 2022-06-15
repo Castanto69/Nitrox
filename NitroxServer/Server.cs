@@ -1,11 +1,14 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
-using NitroxModel.Core;
-using NitroxModel.Logger;
+using System.Threading.Tasks;
+using NitroxModel.DataStructures.GameLogic;
+using NitroxModel.Helper;
 using NitroxServer.GameLogic.Entities;
 using NitroxServer.Serialization;
 using NitroxServer.Serialization.World;
@@ -49,25 +52,30 @@ namespace NitroxServer
             };
         }
 
-        public string SaveSummary
+        public string GetSaveSummary(Perms viewerPerms = Perms.CONSOLE)
         {
-            get
+            // TODO: Extend summary with more useful save file data
+            // Note for later additions: order these lines by their length
+            StringBuilder builder = new("\n");
+            if (viewerPerms is Perms.CONSOLE)
             {
-                // TODO: Extend summary with more useful save file data
-                StringBuilder builder = new("\n");
                 builder.AppendLine($" - Save location: {Path.GetFullPath(serverConfig.SaveName)}");
-                builder.AppendLine($" - World GameMode: {serverConfig.GameMode}");
-                builder.AppendLine($" - Radio messages stored: {world.GameData.StoryGoals.RadioQueue.Count}");
-                builder.AppendLine($" - Story goals completed: {world.GameData.StoryGoals.CompletedGoals.Count}");
-                builder.AppendLine($" - Story goals unlocked: {world.GameData.StoryGoals.GoalUnlocks.Count}");
-                builder.AppendLine($" - Encyclopedia entries: {world.GameData.PDAState.EncyclopediaEntries.Count}");
-                builder.AppendLine($" - Storage slot items: {world.InventoryManager.GetAllStorageSlotItems().Count}");
-                builder.AppendLine($" - Inventory items: {world.InventoryManager.GetAllInventoryItems().Count}");
-                builder.AppendLine($" - Known tech: {world.GameData.PDAState.KnownTechTypes.Count}");
-                builder.AppendLine($" - Vehicles: {world.VehicleManager.GetVehicles().Count()}");
-
-                return builder.ToString();
             }
+            builder.AppendLine($" - Aurora's state: {world.EventTriggerer.GetAuroraStateSummary()}");
+            builder.AppendLine($" - Current time: day {world.EventTriggerer.Day} ({Math.Floor(world.EventTriggerer.ElapsedSeconds)}s)");
+            builder.AppendLine($" - Scheduled goals stored: {world.GameData.StoryGoals.ScheduledGoals.Count}");
+            builder.AppendLine($" - Story goals completed: {world.GameData.StoryGoals.CompletedGoals.Count}");
+            builder.AppendLine($" - Radio messages stored: {world.GameData.StoryGoals.RadioQueue.Count}");
+            builder.AppendLine($" - World gamemode: {serverConfig.GameMode}");
+            builder.AppendLine($" - Story goals unlocked: {world.GameData.StoryGoals.GoalUnlocks.Count}");
+            builder.AppendLine($" - Encyclopedia entries: {world.GameData.PDAState.EncyclopediaEntries.Count}");
+            builder.AppendLine($" - Storage slot items: {world.InventoryManager.GetAllStorageSlotItems().Count}");
+            builder.AppendLine($" - Inventory items: {world.InventoryManager.GetAllInventoryItems().Count}");
+            builder.AppendLine($" - Progress tech: {world.GameData.PDAState.CachedProgress.Count}");
+            builder.AppendLine($" - Known tech: {world.GameData.PDAState.KnownTechTypes.Count}");
+            builder.AppendLine($" - Vehicles: {world.VehicleManager.GetVehicles().Count()}");
+                
+            return builder.ToString();
         }
 
         public void Save()
@@ -133,19 +141,17 @@ namespace NitroxServer
                 Log.Warn($"Server start was cancelled by user:{Environment.NewLine}{ex.Message}");
                 return false;
             }
-
+            
+            LogHowToConnectAsync().ConfigureAwait(false);
             Log.Info($"Server is listening on port {Port} UDP");
             Log.Info($"Using {serverConfig.SerializerMode} as save file serializer");
             Log.InfoSensitive("Server Password: {password}", string.IsNullOrEmpty(serverConfig.ServerPassword) ? "None. Public Server." : serverConfig.ServerPassword);
             Log.InfoSensitive("Admin Password: {password}", serverConfig.AdminPassword);
             Log.Info($"Autosave: {(serverConfig.DisableAutoSave ? "DISABLED" : $"ENABLED ({serverConfig.SaveInterval / 60000} min)")}");
-            Log.Info($"Loaded save\n{SaveSummary}");
+            Log.Info($"Loaded save\n{GetSaveSummary()}");
 
             PauseServer();
 
-#if RELEASE
-            IpLogger.PrintServerIps();
-#endif
             return true;
         }
 
@@ -169,6 +175,31 @@ namespace NitroxServer
             Log.Info("Nitrox Server Stopped");
         }
 
+        private async Task LogHowToConnectAsync()
+        {
+            Task<IPAddress> localIp = Task.Factory.StartNew(NetHelper.GetLanIp);
+            Task<IPAddress> wanIp = NetHelper.GetWanIpAsync();
+            Task<IPAddress> hamachiIp = Task.Factory.StartNew(NetHelper.GetHamachiIp);
+
+            List<string> options = new();
+            options.Add("127.0.0.1 - You (Local)");
+            if (await wanIp != null)
+            {
+                options.Add("{ip:l} - Friends on another internet network (Port Forwarding)");
+            }
+            if (await hamachiIp != null)
+            {
+                options.Add($"{hamachiIp.Result} - Friends using Hamachi (VPN)");
+            }
+            // LAN IP could be null if all Ethernet/Wi-Fi interfaces are disabled.
+            if (await localIp != null)
+            {
+                options.Add($"{localIp.Result} - Friends on same internet network (LAN)");
+            }
+
+            Log.InfoSensitive($"Use IP to connect:{Environment.NewLine}\t{string.Join($"{Environment.NewLine}\t", options)}", wanIp.Result);
+        }
+
         public void StopAndWait(bool shouldSave = true)
         {
             Stop(shouldSave);
@@ -189,8 +220,7 @@ namespace NitroxServer
         public void PauseServer()
         {
             DisablePeriodicSaving();
-            world.EventTriggerer.PauseWorldTime();
-            world.EventTriggerer.PauseEventTimers();
+            world.EventTriggerer.PauseWorld();
             Log.Info("Server has paused, waiting for players to connect");
         }
 
@@ -200,8 +230,7 @@ namespace NitroxServer
             {
                 EnablePeriodicSaving();
             }
-            world.EventTriggerer.StartWorldTime();
-            world.EventTriggerer.StartEventTimers();
+            world.EventTriggerer.StartWorld();
             Log.Info("Server has resumed");
         }
     }

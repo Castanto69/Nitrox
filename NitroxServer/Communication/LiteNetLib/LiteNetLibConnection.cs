@@ -1,7 +1,6 @@
-using System.Net;
+﻿using System.Net;
 using LiteNetLib;
 using LiteNetLib.Utils;
-using NitroxModel.Logger;
 using NitroxModel.Networking;
 using NitroxModel.Packets;
 
@@ -13,6 +12,24 @@ namespace NitroxServer.Communication.LiteNetLib
         private readonly NetPeer peer;
 
         public IPEndPoint Endpoint => peer.EndPoint;
+        public NitroxConnectionState State => MapConnectionState(peer.ConnectionState);
+
+        private NitroxConnectionState MapConnectionState(ConnectionState connectionState)
+        {
+            NitroxConnectionState state = NitroxConnectionState.Unknown;
+
+            if (connectionState.HasFlag(ConnectionState.Connected))
+            {
+                state = NitroxConnectionState.Connected;
+            }
+
+            if (connectionState.HasFlag(ConnectionState.Disconnected))
+            {
+                state = NitroxConnectionState.Disconnected;
+            }
+
+            return state;
+        }
 
         public LiteNetLibConnection(NetPeer peer)
         {

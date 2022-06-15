@@ -5,7 +5,6 @@ using NitroxClient.Communication.MultiplayerSession.ConnectionState;
 using NitroxClient.GameLogic;
 using NitroxModel;
 using NitroxModel.Helper;
-using NitroxModel.Logger;
 using NitroxModel.MultiplayerSession;
 using NitroxModel.Packets;
 using NitroxModel.Serialization;
@@ -52,7 +51,8 @@ namespace NitroxClient.Communication.MultiplayerSession
         {
             SessionPolicy = policy;
             NitroxConsole.DisableConsole = SessionPolicy.DisableConsole;
-            Version localVersion = typeof(Extensions).Assembly.GetName().Version;
+            Version localVersion = NitroxEnvironment.Version;
+
             localVersion = new Version(localVersion.Major, localVersion.Minor);
             switch (localVersion.CompareTo(SessionPolicy.NitroxVersionAllowed))
             {
@@ -71,6 +71,13 @@ namespace NitroxClient.Communication.MultiplayerSession
 
         public void RequestSessionReservation(PlayerSettings playerSettings, AuthenticationContext authenticationContext)
         {
+            // If a reservation has already been sent (in which case the client is enqueued in the join queue)
+            if (CurrentState.CurrentStage == MultiplayerSessionConnectionStage.AWAITING_SESSION_RESERVATION)
+            {
+                Log.InGame(Language.main.Get("Nitrox_Waiting"));
+                return;
+            }
+
             PlayerSettings = playerSettings;
             AuthenticationContext = authenticationContext;
             CurrentState.NegotiateReservation(this);
@@ -78,6 +85,12 @@ namespace NitroxClient.Communication.MultiplayerSession
 
         public void ProcessReservationResponsePacket(MultiplayerSessionReservation reservation)
         {
+            if (reservation.ReservationState == MultiplayerSessionReservationState.ENQUEUED_IN_JOIN_QUEUE)
+            {
+                Log.InGame(Language.main.Get("Nitrox_Waiting"));
+                return;
+            }
+
             Reservation = reservation;
             CurrentState.NegotiateReservation(this);
         }
@@ -106,6 +119,8 @@ namespace NitroxClient.Communication.MultiplayerSession
             return false;
         }
 
+        public bool IsPacketSuppressed(Type packetType) => suppressedPacketsTypes.Contains(packetType);
+
         public PacketSuppressor<T> Suppress<T>()
         {
             return new PacketSuppressor<T>(suppressedPacketsTypes);
@@ -127,6 +142,7 @@ namespace NitroxClient.Communication.MultiplayerSession
             if (sessionConnectionState.CurrentStage == MultiplayerSessionConnectionStage.SESSION_RESERVED)
             {
                 Log.PlayerName = username;
+                LANDiscoveryClient.EndSearching();
             }
         }
 

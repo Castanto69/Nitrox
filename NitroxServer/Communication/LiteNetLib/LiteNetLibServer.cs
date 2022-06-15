@@ -1,5 +1,9 @@
-﻿using LiteNetLib;
+﻿using System.Threading;
+using System.Threading.Tasks;
+using LiteNetLib;
 using LiteNetLib.Utils;
+using Mono.Nat;
+using NitroxModel.Helper;
 using NitroxModel.Packets;
 using NitroxServer.Communication.Packets;
 using NitroxServer.GameLogic;
@@ -40,20 +44,54 @@ namespace NitroxServer.Communication.LiteNetLib
             {
                 return false;
             }
-
-#if RELEASE
+            
             if (useUpnpPortForwarding)
             {
-                BeginPortForward(portNumber);
+                PortForwardAsync((ushort)portNumber).ConfigureAwait(false);
             }
-#endif
+
+            if (useLANDiscovery)
+            {
+                LANDiscoveryServer.Start();
+            }
 
             return true;
         }
 
+        private async Task PortForwardAsync(ushort port)
+        {
+            if (await NatHelper.GetPortMappingAsync(port, Protocol.Udp) != null)
+            {
+                Log.Info($"Port {port} UDP is already port forwarded");
+                return;
+            }
+
+            bool isMapped = await NatHelper.AddPortMappingAsync(port, Protocol.Udp);
+            if (isMapped)
+            {
+                Log.Info($"Server port {port} UDP has been automatically opened on your router (port is closed when server closes)");
+            }
+            else
+            {
+                Log.Warn($"Failed to automatically port forward {port} UDP through UPnP. If using Hamachi or manually port-forwarding, please disregard this warning. To disable this feature you can go into the server settings.");
+            }
+        }
+
         public override void Stop()
         {
+            playerManager.SendPacketToAllPlayers(new ServerStopped());
+            // We want every player to receive this packet
+            Thread.Sleep(500);
             server.Stop();
+            if (useUpnpPortForwarding)
+            {
+                NatHelper.DeletePortMappingAsync((ushort)portNumber, Protocol.Udp).ConfigureAwait(false).GetAwaiter().GetResult();
+            }
+
+            if (useLANDiscovery)
+            {
+                LANDiscoveryServer.Stop();
+            }
         }
 
         public void OnConnectionRequest(ConnectionRequest request)

@@ -8,7 +8,6 @@ using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.DataStructures.Unity;
 using NitroxModel.Discovery;
 using NitroxModel.Helper;
-using NitroxModel.Logger;
 using NitroxServer.GameLogic.Entities.Spawning;
 using NitroxServer.UnityStubs;
 using ProtoBufNet;
@@ -52,12 +51,10 @@ namespace NitroxServer.Serialization
 
         public void ParseFile(NitroxInt3 batchId, string pathPrefix, string prefix, string suffix, List<EntitySpawnPoint> spawnPoints)
         {
-            List<string> errors = new List<string>();
-            string subnauticaPath = GameInstallationFinder.Instance.FindGame(errors);
+            string subnauticaPath = NitroxUser.SubnauticaPath;
 
-            if (subnauticaPath == null)
+            if (string.IsNullOrEmpty(subnauticaPath))
             {
-                Log.Error($"Could not locate Subnautica installation directory: {Environment.NewLine}{string.Join(Environment.NewLine, errors)}");
                 return;
             }
 

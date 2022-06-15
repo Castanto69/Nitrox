@@ -5,7 +5,6 @@ using NitroxClient.GameLogic;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.Unity.Helper;
 using NitroxModel.DataStructures;
-using NitroxModel.Logger;
 using NitroxModel.Packets;
 using UnityEngine;
 
@@ -32,7 +31,7 @@ namespace NitroxClient.Communication.Packets.Processors
             GameObject vehicleDockingBayGo = NitroxEntity.RequireObjectFrom(packet.DockId);
 
             Vehicle vehicle = vehicleGo.RequireComponent<Vehicle>();
-            VehicleDockingBay vehicleDockingBay = vehicleDockingBayGo.RequireComponentInChildren<VehicleDockingBay>();
+            VehicleDockingBay vehicleDockingBay = vehicleDockingBayGo.RequireComponent<VehicleDockingBay>();
 
             using (packetSender.Suppress<VehicleDocking>())
             {

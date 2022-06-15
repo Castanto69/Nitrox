@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using NitroxModel.Logger;
 
 namespace NitroxModel.Serialization
 {
@@ -14,6 +13,7 @@ namespace NitroxModel.Serialization
         // ReSharper disable once StaticMemberInGenericType
         private static readonly Dictionary<string, MemberInfo> typeCache = new();
         private readonly object locker = new();
+        private readonly char[] newlineChars = Environment.NewLine.ToCharArray();
 
         public abstract string FileName { get; }
 
@@ -32,7 +32,7 @@ namespace NitroxModel.Serialization
                 Dictionary<string, MemberInfo> typeCachedDict = GetTypeCacheDictionary();
                 using StreamReader reader = new(new FileStream(FileName, FileMode.Open), Encoding.UTF8);
 
-                HashSet<MemberInfo> unserializedMembers = typeCachedDict.Values.ToHashSet();
+                HashSet<MemberInfo> unserializedMembers = new(typeCachedDict.Values);
                 char[] lineSeparator = { '=' };
                 int lineNum = 0;
                 string readLine;
@@ -88,8 +88,8 @@ namespace NitroxModel.Serialization
                             value = prop.GetValue(this);
                         }
 
-                        return new { m.Name, Value = value };
-                    }).Select(m => $" - {m.Name}: {m.Value}");
+                        return $" - {m.Name}: {value}";
+                    });
 
                     Log.Warn($@"{FileName} is using default values for the missing properties:{Environment.NewLine}{string.Join(Environment.NewLine, unserializedProps)}");
                 }
@@ -102,27 +102,33 @@ namespace NitroxModel.Serialization
             {
                 Type type = GetType();
                 Dictionary<string, MemberInfo> typeCachedDict = GetTypeCacheDictionary();
-
-                using StreamWriter stream = new(new FileStream(FileName, FileMode.OpenOrCreate), Encoding.UTF8);
-                WritePropertyDescription(type, stream);
-
-                foreach (string name in typeCachedDict.Keys)
+                try
                 {
-                    MemberInfo member = typeCachedDict[name];
+                    using StreamWriter stream = new(new FileStream(FileName, FileMode.Create), Encoding.UTF8);
+                    WritePropertyDescription(type, stream);
 
-                    FieldInfo field = member as FieldInfo;
-                    if (field != null)
+                    foreach (string name in typeCachedDict.Keys)
                     {
-                        WritePropertyDescription(member, stream);
-                        WriteProperty(field, field.GetValue(this), stream);
-                    }
+                        MemberInfo member = typeCachedDict[name];
 
-                    PropertyInfo property = member as PropertyInfo;
-                    if (property != null)
-                    {
-                        WritePropertyDescription(member, stream);
-                        WriteProperty(property, property.GetValue(this), stream);
+                        FieldInfo field = member as FieldInfo;
+                        if (field != null)
+                        {
+                            WritePropertyDescription(member, stream);
+                            WriteProperty(field, field.GetValue(this), stream);
+                        }
+
+                        PropertyInfo property = member as PropertyInfo;
+                        if (property != null)
+                        {
+                            WritePropertyDescription(member, stream);
+                            WriteProperty(property, property.GetValue(this), stream);
+                        }
                     }
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    Log.Error($"Config file {FileName} exists but is a hidden file and cannot be modified, config file will not be updated. Please make file accessible");
                 }
             }
         }
@@ -216,7 +222,7 @@ namespace NitroxModel.Serialization
         private void WriteProperty<TMember>(TMember member, object value, StreamWriter stream) where TMember : MemberInfo
         {
             stream.Write(member.Name);
-            stream.Write("=");
+            stream.Write('=');
             stream.WriteLine(value);
         }
 
@@ -225,7 +231,7 @@ namespace NitroxModel.Serialization
             PropertyDescriptionAttribute attribute = member.GetCustomAttribute<PropertyDescriptionAttribute>();
             if (attribute != null)
             {
-                foreach (string line in attribute.Description.Split(Environment.NewLine.ToCharArray()))
+                foreach (string line in attribute.Description.Split(newlineChars))
                 {
                     stream.Write("# ");
                     stream.WriteLine(line);

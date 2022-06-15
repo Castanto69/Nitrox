@@ -2,7 +2,6 @@
 using NitroxClient.Communication.Packets.Processors.Abstract;
 using NitroxClient.GameLogic.Helper;
 using NitroxClient.MonoBehaviours;
-using NitroxModel.Logger;
 using NitroxModel.Packets;
 using UnityEngine;
 using static NitroxClient.GameLogic.Helper.TransientLocalObjectManager;
@@ -32,7 +31,6 @@ namespace NitroxClient.Communication.Packets.Processors
                 if (baseDeconstructable != null)
                 {
                     TransientLocalObjectManager.Add(TransientObjectType.LATEST_DECONSTRUCTED_BASE_PIECE_GUID, packet.Id);
-
                     baseDeconstructable.Deconstruct();
                 }
                 else if (constructable != null)

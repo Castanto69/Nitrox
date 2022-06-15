@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using NitroxModel.DataStructures;
@@ -14,13 +14,15 @@ namespace NitroxServer.Communication.Packets.Processors
     public class PlayerJoiningMultiplayerSessionProcessor : UnauthenticatedPacketProcessor<PlayerJoiningMultiplayerSession>
     {
         private readonly PlayerManager playerManager;
-        private readonly TimeKeeper timeKeeper;
+        private readonly ScheduleKeeper scheduleKeeper;
+        private readonly EventTriggerer eventTriggerer;
         private readonly World world;
 
-        public PlayerJoiningMultiplayerSessionProcessor(TimeKeeper timeKeeper, PlayerManager playerManager, World world)
+        public PlayerJoiningMultiplayerSessionProcessor(ScheduleKeeper scheduleKeeper, EventTriggerer eventTriggerer, PlayerManager playerManager, World world)
         {
+            this.scheduleKeeper = scheduleKeeper;
+            this.eventTriggerer = eventTriggerer;
             this.playerManager = playerManager;
-            this.timeKeeper = timeKeeper;
             this.world = world;
         }
 
@@ -71,7 +73,8 @@ namespace NitroxServer.Communication.Packets.Processors
                 player.UsedItems,
                 player.QuickSlotsBinding,
                 world.GameData.PDAState.GetInitialPDAData(),
-                world.GameData.StoryGoals.GetInitialStoryGoalData(),
+                world.GameData.StoryGoals.GetInitialStoryGoalData(scheduleKeeper),
+                new HashSet<string>(player.CompletedGoals),
                 player.Position,
                 player.SubRootId,
                 player.Stats,
@@ -82,7 +85,7 @@ namespace NitroxServer.Communication.Packets.Processors
                 player.Permissions
             );
 
-            timeKeeper.SendCurrentTimePacket();
+            player.SendPacket(new TimeChange(eventTriggerer.ElapsedSeconds, true));
             player.SendPacket(initialPlayerSync);
         }
 

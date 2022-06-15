@@ -47,6 +47,9 @@ namespace NitroxServer.GameLogic.Players
         [JsonProperty, ProtoMember(12)]
         public bool IsPermaDeath { get; set; }
 
+        [JsonProperty, ProtoMember(13)]
+        public HashSet<string> CompletedGoals { get; set; } = new HashSet<string>();
+
         public Player ToPlayer()
         {
             return new Player(Id,
@@ -62,7 +65,8 @@ namespace NitroxServer.GameLogic.Players
                               UsedItems,
                               QuickSlotsBinding,
                               EquippedItems,
-                              Modules);
+                              Modules,
+                              CompletedGoals);
         }
 
         public static PersistedPlayerData FromPlayer(Player player)
@@ -77,10 +81,11 @@ namespace NitroxServer.GameLogic.Players
                 Id = player.Id,
                 SpawnPosition = player.Position,
                 CurrentStats = player.Stats,
-                SubRootId = player.SubRootId.OrElse(null),
+                SubRootId = player.SubRootId.OrNull(),
                 Permissions = player.Permissions,
                 NitroxId = player.GameObjectId,
-                IsPermaDeath = player.IsPermaDeath
+                IsPermaDeath = player.IsPermaDeath,
+                CompletedGoals = new HashSet<string>(player.CompletedGoals)
             };
         }
     }

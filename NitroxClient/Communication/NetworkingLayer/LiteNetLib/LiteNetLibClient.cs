@@ -4,7 +4,6 @@ using LiteNetLib.Utils;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Debuggers;
 using NitroxClient.MonoBehaviours.Gui.InGame;
-using NitroxModel.Logger;
 using NitroxModel.Networking;
 using NitroxModel.Packets;
 
@@ -89,10 +88,7 @@ namespace NitroxClient.Communication.NetworkingLayer.LiteNetLib
 
         private void Disconnected(NetPeer peer, DisconnectInfo disconnectInfo)
         {
-            if (LostConnectionModal.Instance)
-            {
-                LostConnectionModal.Instance.Show();
-            }
+            Modal.Get<LostConnectionModal>()?.Show();
             IsConnected = false;
             Log.Info("Disconnected from server");
         }

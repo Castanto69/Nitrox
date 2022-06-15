@@ -1,12 +1,12 @@
 ﻿using System.Collections.Generic;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours;
+using NitroxClient.MonoBehaviours.Overrides;
 using NitroxClient.Unity.Helper;
 using NitroxModel.DataStructures;
 using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.DataStructures.Util;
 using NitroxModel.Helper;
-using NitroxModel.Logger;
 using NitroxModel.Packets;
 using NitroxModel_Subnautica.DataStructures;
 using UnityEngine;
@@ -120,10 +120,34 @@ namespace NitroxClient.GameLogic
             NitroxEntity.SetNewId(radio.gameObject, model.RadioId);
 
             DamageEscapePod(model.Damaged, model.RadioDamaged);
+            FixStartMethods(escapePod);
+
+            // Start() isn't executed for the EscapePod, why? Idk, maybe because it's a scene...
+            MultiplayerCinematicReference reference = escapePod.AddComponent<MultiplayerCinematicReference>();
+            foreach (PlayerCinematicController controller in escapePod.GetComponentsInChildren<PlayerCinematicController>())
+            {
+                reference.AddController(controller);
+            }
 
             SURPRESS_ESCAPE_POD_AWAKE_METHOD = false;
 
             return escapePod;
+        }
+
+        /// <summary>
+        /// Start() isn't executed for the EscapePod and children (Why? Idk, maybe because it's a scene...) so we call the components here where we have patches in Start.
+        /// </summary>
+        private static void FixStartMethods(GameObject escapePod)
+        {
+            foreach (FMOD_CustomEmitter customEmitter in escapePod.GetComponentsInChildren<FMOD_CustomEmitter>())
+            {
+                customEmitter.Start();
+            }
+
+            foreach (FMOD_StudioEventEmitter studioEventEmitter in escapePod.GetComponentsInChildren<FMOD_StudioEventEmitter>())
+            {
+                studioEventEmitter.Start();
+            }
         }
 
         public void DamageEscapePod(bool damage, bool radio)

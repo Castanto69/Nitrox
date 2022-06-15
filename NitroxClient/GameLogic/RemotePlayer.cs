@@ -1,12 +1,11 @@
 ﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using NitroxClient.GameLogic.PlayerModel;
-using NitroxClient.GameLogic.PlayerModel.Abstract;
+using NitroxClient.GameLogic.PlayerLogic.PlayerModel;
+using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.Unity.Helper;
 using NitroxModel.Helper;
-using NitroxModel.Logger;
 using NitroxModel.MultiplayerSession;
 using UnityEngine;
 using UWE;
@@ -38,6 +37,10 @@ namespace NitroxClient.GameLogic
         public SubRoot SubRoot { get; private set; }
         public EscapePod EscapePod { get; private set; }
         public PilotingChair PilotingChair { get; private set; }
+
+        public readonly Event<RemotePlayer> PlayerDeathEvent = new();
+
+        public readonly Event<RemotePlayer> PlayerDisconnectEvent = new();
 
         public RemotePlayer(GameObject playerBody, PlayerContext playerContext, List<TechType> equippedTechTypes, List<Pickupable> inventoryItems, PlayerModelManager modelManager)
         {
@@ -81,6 +84,7 @@ namespace NitroxClient.GameLogic
             playerModelManager.BeginApplyPlayerColor(this);
             playerModelManager.RegisterEquipmentVisibilityHandler(PlayerModel);
             UpdateEquipmentVisibility();
+            SetupSkyAppliers();
 
             ErrorMessage.AddMessage($"{PlayerName} joined the game.");
         }
@@ -158,6 +162,7 @@ namespace NitroxClient.GameLogic
         {
             if (SubRoot != newSubRoot)
             {
+                SkyEnvironmentChanged.Broadcast(Body, newSubRoot);
                 if (newSubRoot)
                 {
                     Attach(newSubRoot.transform, true);
@@ -175,6 +180,7 @@ namespace NitroxClient.GameLogic
         {
             if (EscapePod != newEscapePod)
             {
+                SkyEnvironmentChanged.Broadcast(Body, newEscapePod);
                 if (newEscapePod)
                 {
                     Attach(newEscapePod.transform, true);
@@ -198,8 +204,8 @@ namespace NitroxClient.GameLogic
 
                     Detach();
                     ArmsController.SetWorldIKTarget(null, null);
-
-                    Vehicle.GetComponent<MultiplayerVehicleControl<Vehicle>>().Exit();
+                    
+                    Vehicle.GetComponent<MultiplayerVehicleControl>().Exit();
                 }
 
                 if (newVehicle)
@@ -209,7 +215,18 @@ namespace NitroxClient.GameLogic
                     Attach(newVehicle.playerPosition.transform);
                     ArmsController.SetWorldIKTarget(newVehicle.leftHandPlug, newVehicle.rightHandPlug);
 
-                    newVehicle.GetComponent<MultiplayerVehicleControl<Vehicle>>().Enter();
+                    // From here, a basic issue can happen.
+                    // When a vehicle is docked since we joined a game and another player undocks him before the local player does, no MultiplayerVehicleControl can be found on the vehicle because they are only created when receiving VehicleMovement packets
+                    // Therefore we need to make sure that the MultiplayerVehicleControl component exists before using it
+                    switch (newVehicle)
+                    {
+                        case SeaMoth:
+                            newVehicle.gameObject.EnsureComponent<MultiplayerSeaMoth>().Enter();
+                            break;
+                        case Exosuit:
+                            newVehicle.gameObject.EnsureComponent<MultiplayerExosuit>().Enter();
+                            break;
+                    }
                 }
 
                 RigidBody.isKinematic = newVehicle;
@@ -264,6 +281,19 @@ namespace NitroxClient.GameLogic
         private void UpdateEquipmentVisibility()
         {
             playerModelManager.UpdateEquipmentVisibility(new ReadOnlyCollection<TechType>(equipment.ToList()));
+        }
+        
+        /// <summary>
+        /// Allows the remote player model to have its lightings dynamicly adjusted
+        /// </summary>
+        private void SetupSkyAppliers()
+        {
+            // SkyAppliers apply the light effects of a lighting source on a set of renderers
+            SkyApplier skyApplier = Body.AddComponent<SkyApplier>();
+            skyApplier.anchorSky = Skies.Auto;
+            skyApplier.emissiveFromPower = false;
+            skyApplier.dynamic = true;
+            skyApplier.renderers = Body.GetComponentsInChildren<SkinnedMeshRenderer>(true);
         }
     }
 }
