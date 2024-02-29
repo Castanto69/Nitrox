@@ -1,60 +1,43 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using NitroxModel.Helper;
 
-namespace NitroxPatcher.Patches.Dynamic
-{
-    public class IngameMenu_OnSelect_Patch : NitroxPatch, IDynamicPatch
-    {
-        private static readonly MethodInfo TARGET_METHOD = Reflect.Method((IngameMenu t) => t.OnSelect(default(bool)));
-        private static readonly MethodInfo IS_PERMA_DEATH_METHOD = Reflect.Method(() => GameModeUtils.IsPermadeath());
+namespace NitroxPatcher.Patches.Dynamic;
 
-        public static void Postfix()
-        {
-            IngameMenu.main.saveButton.gameObject.SetActive(false);
-            IngameMenu.main.quitToMainMenuButton.interactable = true;
+public sealed partial class IngameMenu_OnSelect_Patch : NitroxPatch, IDynamicPatch
+{
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((IngameMenu t) => t.OnSelect(default(bool)));
+    private static readonly MethodInfo UPDATE_BUTTONS_METHOD = Reflect.Method((IngameMenu t) => t.UpdateButtons());
+
+    public static void Postfix()
+    {
+        IngameMenu.main.saveButton.gameObject.SetActive(false);
 
 #if DEBUG
-            IngameMenu.main.ActivateDeveloperMode(); // Activating it here to ensure IngameMenu is ready for it
+        IngameMenu.main.ActivateDeveloperMode(); // Activating it here to ensure IngameMenu is ready for it
 #endif
-        }
+    }
 
-        public static IEnumerable<CodeInstruction> Transpiler(MethodBase original, IEnumerable<CodeInstruction> instructions)
+    public static IEnumerable<CodeInstruction> Transpiler(MethodBase original, IEnumerable<CodeInstruction> instructions)
+    {
+        List<CodeInstruction> instructionList = instructions.ToList();
+
+        /* Early return cuts out
+         * this.UpdateButtons();
+         */
+        for (int i = 0; i < instructionList.Count; i++)
         {
-            /* Early return cuts out
-             * if (GameModeUtils.IsPermadeath())
-		     * {
-			 *    this.quitToMainMenuText.text = Language.main.Get("SaveAndQuitToMainMenu");
-			 *    this.saveButton.gameObject.SetActive(false);
-		     * }
-		     * else
-		     * {
-			 *     this.saveButton.interactable = this.GetAllowSaving();
-			 *     this.quitToMainMenuButton.interactable = true;
-		     * }
-             * if (PlatformUtils.isXboxOnePlatform)
-		     * {
-			 *      this.helpButton.gameObject.SetActive(true);
-		     * }
-             */
-            foreach (CodeInstruction instruction in instructions)
+            CodeInstruction instruction = instructionList[i];
+            yield return instruction;
+
+            if (UPDATE_BUTTONS_METHOD.Equals(instructionList[i + 2].operand))
             {
-                if (IS_PERMA_DEATH_METHOD.Equals(instruction.operand))
-                {
-                    yield return new CodeInstruction(OpCodes.Ret);
-                    break;
-                }
-
-                yield return instruction;
+                yield return new CodeInstruction(OpCodes.Ret);
+                break;
             }
-        }
-
-        public override void Patch(Harmony harmony)
-        {
-            PatchTranspiler(harmony, TARGET_METHOD);
-            PatchPostfix(harmony, TARGET_METHOD);
         }
     }
 }

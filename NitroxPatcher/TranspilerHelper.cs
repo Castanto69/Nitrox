@@ -13,7 +13,7 @@ namespace NitroxPatcher
     internal static class TranspilerHelper
     {
         private static readonly MethodInfo serviceLocator = typeof(NitroxServiceLocator)
-            .GetMethod(nameof(NitroxServiceLocator.LocateService), BindingFlags.Static | BindingFlags.Public, null, new Type[] { }, null);
+            .GetMethod(nameof(NitroxServiceLocator.LocateService), BindingFlags.Static | BindingFlags.Public, null, Array.Empty<Type>(), null);
 
         public static CodeInstruction LocateService<T>()
         {
@@ -22,7 +22,7 @@ namespace NitroxPatcher
 
         private static IEnumerable<LocalVariableInfo> GetMatchingLocalVariables<T>(MethodBase method)
         {
-            return method.GetMethodBody()?.LocalVariables.Where(v => v.LocalType == typeof(T)) ?? new LocalVariableInfo[0];
+            return method.GetMethodBody()?.LocalVariables.Where(v => v.LocalType == typeof(T)) ?? Array.Empty<LocalVariableInfo>();
         }
 
         /// <summary>
@@ -33,7 +33,7 @@ namespace NitroxPatcher
         /// <returns></returns>
         public static IEnumerable<CodeInstruction> IsMultiplayer(Label jmpLabel, ILGenerator generator)
         {
-            yield return new CodeInstruction(OpCodes.Callvirt,  Reflect.Property(() => Multiplayer.Active).GetMethod);
+            yield return new CodeInstruction(OpCodes.Callvirt, Reflect.Property(() => Multiplayer.Active).GetMethod);
             yield return new CodeInstruction(OpCodes.Brfalse, jmpLabel); // If false jump to the end of the code block
         }
 
@@ -116,6 +116,7 @@ namespace NitroxPatcher
             {
                 return new CodeInstruction(OpCodes.Nop);
             }
+
             return Ldloc(method.GetLocalVariableIndex<T>(i));
         }
     }

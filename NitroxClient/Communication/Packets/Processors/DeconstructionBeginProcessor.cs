@@ -19,14 +19,14 @@ namespace NitroxClient.Communication.Packets.Processors
 
         public override void Process(DeconstructionBegin packet)
         {
-            Log.Info("Received deconstruction packet for id: " + packet.Id);
+            Log.Info($"Received deconstruction packet for id: {packet.Id}");
 
             GameObject deconstructing = NitroxEntity.RequireObjectFrom(packet.Id);
 
             Constructable constructable = deconstructing.GetComponent<Constructable>();
             BaseDeconstructable baseDeconstructable = deconstructing.GetComponent<BaseDeconstructable>();
 
-            using (packetSender.Suppress<DeconstructionBegin>())
+            using (PacketSuppressor<DeconstructionBegin>.Suppress())
             {
                 if (baseDeconstructable != null)
                 {

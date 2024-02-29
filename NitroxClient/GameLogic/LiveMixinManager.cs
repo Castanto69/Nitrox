@@ -1,115 +1,109 @@
-﻿using NitroxClient.Communication.Abstract;
-using NitroxClient.MonoBehaviours;
+using System;
+using System.Collections.Generic;
 using NitroxModel.DataStructures;
-using NitroxModel.DataStructures.GameLogic;
-using NitroxModel.DataStructures.Util;
-using NitroxModel.Packets;
-using NitroxModel_Subnautica.DataStructures;
 using UnityEngine;
 
-namespace NitroxClient.GameLogic
+namespace NitroxClient.GameLogic;
+
+public class LiveMixinManager
 {
-    public class LiveMixinManager
+    private readonly SimulationOwnership simulationOwnership;
+    private static readonly HashSet<string> broadcastDeathClassIdWhitelist = new()
     {
+        "7d307502-46b7-4f86-afb0-65fe8867f893" // Crash (fish)
+    };
 
-        private readonly IMultiplayerSession multiplayerSession;
-        private readonly SimulationOwnership simulationOwnership;
+    public bool IsRemoteHealthChanging { get; private set; }
 
-        private bool processingRemoteHealthChange = false;
+    public LiveMixinManager(SimulationOwnership simulationOwnership)
+    {
+        this.simulationOwnership = simulationOwnership;
+    }
 
-        public LiveMixinManager(IMultiplayerSession multiplayerSession, SimulationOwnership simulationOwnership)
+    // Currently, we only apply live mixin updates to vehicles as there is more work to implement
+    // damage for regular entities like fish.
+    public bool IsWhitelistedUpdateType(LiveMixin entity)
+    {
+        Vehicle vehicle = entity.GetComponent<Vehicle>();
+        SubRoot subRoot = entity.GetComponent<SubRoot>();
+
+        return (vehicle || (subRoot && subRoot.isCyclops));
+    }
+    
+    public bool ShouldBroadcastDeath(LiveMixin liveMixin)
+    {
+        return liveMixin.TryGetComponent(out UniqueIdentifier uniqueIdentifier) &&
+               !string.IsNullOrEmpty(uniqueIdentifier.classId) &&
+               broadcastDeathClassIdWhitelist.Contains(uniqueIdentifier.classId);
+    }
+
+    public bool ShouldApplyNextHealthUpdate(LiveMixin receiver, GameObject dealer = null)
+    {
+        if (!receiver.TryGetNitroxId(out NitroxId id))
         {
-            this.multiplayerSession = multiplayerSession;
-            this.simulationOwnership = simulationOwnership;
+            return false;
         }
 
-        // Currently, we only apply live mixin updates to vehicles as there is more work to implement
-        // damage for regular entities like fish.
-        public bool IsWhitelistedUpdateType(LiveMixin entity)
+        if (!simulationOwnership.HasAnyLockType(id) && !IsRemoteHealthChanging)
         {
-            Vehicle vehicle = entity.GetComponent<Vehicle>();
-            SubRoot subRoot = entity.GetComponent<SubRoot>();
-
-            return (vehicle != null || (subRoot != null && subRoot.isCyclops));
+            return false;
         }
 
-        public bool ShouldApplyNextHealthUpdate(LiveMixin reciever, GameObject dealer = null)
+
+        // Check to see if this health change is caused by docked vehicle collisions.  If so, we don't want to apply it.
+        if (!dealer)
         {
-            NitroxId id = NitroxEntity.GetId(reciever.gameObject);
-
-            if (!simulationOwnership.HasAnyLockType(id) && !processingRemoteHealthChange)
-            {
-                return false;
-            }
-
-            // Check to see if this health change is caused by docked vehicle collisions.  If so, we don't want to apply it.
-            if (dealer)
-            {
-                Vehicle dealerVehicle = dealer.GetComponent<Vehicle>();
-                VehicleDockingBay vehicleDockingBay = reciever.GetComponentInChildren<VehicleDockingBay>();
-
-                if (vehicleDockingBay && dealerVehicle)
-                {
-                    if (vehicleDockingBay.GetDockedVehicle() == dealerVehicle || vehicleDockingBay.interpolatingVehicle == dealerVehicle
-                        || vehicleDockingBay.nearbyVehicle == dealerVehicle)
-                    {
-                        Log.Debug($"Dealer {dealer} is vehicle and currently docked or nearby {reciever}, do not harm it!");
-                        return false;
-                    }
-                }
-            }
-
             return true;
         }
 
-        public void ProcessRemoteHealthChange(NitroxId id, float LifeChanged, Optional<DamageTakenData> opDamageTakenData, float totalHealth)
+        Vehicle dealerVehicle = dealer.GetComponent<Vehicle>();
+        VehicleDockingBay vehicleDockingBay = receiver.GetComponentInChildren<VehicleDockingBay>();
+
+        if (vehicleDockingBay && dealerVehicle)
         {
-            if (simulationOwnership.HasAnyLockType(id))
+            if (vehicleDockingBay.GetDockedVehicle() == dealerVehicle ||
+                vehicleDockingBay.interpolatingVehicle == dealerVehicle ||
+                vehicleDockingBay.nearbyVehicle == dealerVehicle)
             {
-                Log.Error($"Got LiveMixin change health for {id} but we have the simulation already. This should not happen!");
-                return;
+                Log.Debug($"Dealer {dealer} is vehicle and currently docked or nearby {receiver}, do not harm it!");
+                return false;
             }
+        }
 
-            processingRemoteHealthChange = true;
+        return true;
+    }
 
-            LiveMixin liveMixin = NitroxEntity.RequireObjectFrom(id).GetComponent<LiveMixin>();
+    public void SyncRemoteHealth(LiveMixin liveMixin, float remoteHealth, Vector3 position = default, DamageType damageType = DamageType.Normal)
+    {
+        if (liveMixin.health == remoteHealth)
+        {
+            return;
+        }
 
-            if (LifeChanged < 0)
+        float difference = remoteHealth - liveMixin.health;
+
+        IsRemoteHealthChanging = true;
+
+        // We catch the exceptions here because we don't want IsRemoteHealthChanging to be stuck to true
+        try
+        {
+            if (difference < 0)
             {
-                DamageTakenData damageTakenData = opDamageTakenData.OrNull();
-                Optional<GameObject> opDealer = damageTakenData.DealerId.HasValue ? NitroxEntity.GetObjectFrom(damageTakenData.DealerId.Value) : Optional.Empty;
-                GameObject dealer = opDealer.HasValue ? opDealer.Value : null;
-                if (!dealer && damageTakenData.DealerId.HasValue)
-                {
-                    Log.Warn($"Could not find entity {damageTakenData.DealerId.Value} for damage calculation. This could lead to problems.");
-                }
-                liveMixin.TakeDamage(-LifeChanged, damageTakenData.Position.ToUnity(), (DamageType)damageTakenData.DamageType, dealer);
+                liveMixin.TakeDamage(difference, position, damageType);
             }
             else
             {
-                liveMixin.AddHealth(LifeChanged);
+                liveMixin.AddHealth(difference);
             }
-
-            processingRemoteHealthChange = false;
-
-            // Check if the health calculated by the game is the same as the calculated damage from the simulator
-            if (liveMixin.health != totalHealth)
-            {
-                Log.Warn($"Calculated health and send health for {id} do not align (Calculated: {liveMixin.health}, send:{totalHealth}). This will be correted but should be investigated");
-                liveMixin.health = totalHealth;
-            }
-        }
-
-        public void BroadcastTakeDamage(TechType techType, NitroxId id, float originalDamage, Vector3 position, DamageType damageType, Optional<NitroxId> dealerId, float totalHealth)
+        } catch (Exception e)
         {
-            LiveMixinHealthChanged packet = new LiveMixinHealthChanged(techType.ToDto(), id, -originalDamage, totalHealth, position.ToDto(), (ushort)damageType, dealerId);
-            multiplayerSession.Send(packet);
+            Log.Error(e, $"Encountered an expcetion while processing health update");
         }
 
-        public void BroadcastAddHealth(TechType techType, NitroxId id, float healthAdded, float totalHealth)
-        {
-            LiveMixinHealthChanged packet = new LiveMixinHealthChanged(techType.ToDto(), id, healthAdded, totalHealth);
-            multiplayerSession.Send(packet);
-        }
+        IsRemoteHealthChanging = false;
+
+        // We mainly only do the above to trigger damage effects and sounds.  After those, we sync the remote value
+        // to ensure that any floating point discrepencies aren't an issue.
+        liveMixin.health = remoteHealth;
     }
 }

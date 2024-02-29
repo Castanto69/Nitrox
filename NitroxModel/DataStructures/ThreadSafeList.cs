@@ -1,25 +1,27 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.Serialization;
+using BinaryPack.Attributes;
 using NitroxModel.Helper;
-using ProtoBufNet;
 
 namespace NitroxModel.DataStructures
 {
-    [DebuggerDisplay("Items = {" + nameof(list) + "}")]
-    [ProtoContract]
+    [DebuggerDisplay($"Items = {{{nameof(list)}}}")]
+    [DataContract]
     [Serializable]
     public class ThreadSafeList<T> : IList<T>
     {
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        [ProtoIgnore]
+        [IgnoreDataMember]
         private readonly object locker = new();
 
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        [ProtoMember(1)]
-        private readonly IList<T> list;
+        [DataMember(Order = 1)]
+        [SerializableMember]
+        private List<T> list;
 
         public T this[int i]
         {
@@ -67,7 +69,7 @@ namespace NitroxModel.DataStructures
             list = new List<T>(values);
         }
 
-        public ThreadSafeList(IList<T> list, bool createCopy = true)
+        public ThreadSafeList(List<T> list, bool createCopy = true)
         {
             this.list = createCopy ? CreateCopy(list) : list;
         }
@@ -77,6 +79,14 @@ namespace NitroxModel.DataStructures
             lock (locker)
             {
                 list.Add(item);
+            }
+        }
+
+        public void AddRange(IEnumerable<T> collection)
+        {
+            lock (locker)
+            {
+                list.AddRange(collection);
             }
         }
 
@@ -128,7 +138,7 @@ namespace NitroxModel.DataStructures
                 {
                     return false;
                 }
-                
+
                 list.RemoveAt(index);
                 return true;
             }
@@ -235,7 +245,7 @@ namespace NitroxModel.DataStructures
             }
         }
 
-        private IList<T> CreateCopy(IEnumerable<T> data)
+        private List<T> CreateCopy(IEnumerable<T> data)
         {
             return new List<T>(data);
         }

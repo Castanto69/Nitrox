@@ -46,13 +46,16 @@ namespace NitroxLauncher
         {
             Application.Current.MainWindow?.Hide();
 
-            try
+            if (nitroxEntryPatch?.IsApplied == true)
             {
-                nitroxEntryPatch.Remove();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error while disposing the launcher");
+                try
+                {
+                    nitroxEntryPatch.Remove();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Error while disposing the launcher");
+                }
             }
 
             gameProcess?.Dispose();
@@ -99,13 +102,12 @@ namespace NitroxLauncher
 
         public async Task<string> SetTargetedSubnauticaPath(string path)
         {
-            if (Config.SubnauticaPath == path || !Directory.Exists(path))
+            if ((string.IsNullOrWhiteSpace(Config.SubnauticaPath) && Config.SubnauticaPath == path) || !Directory.Exists(path))
             {
                 return null;
             }
 
             Config.SubnauticaPath = path;
-
             if (lastFindSubnauticaTask != null)
             {
                 await lastFindSubnauticaTask;
@@ -158,16 +160,16 @@ namespace NitroxLauncher
                     page = typeof(ServerConsolePage);
                 }
 
-                if (Application.Current.MainWindow != null)
+                if (Application.Current.MainWindow is MainWindow window)
                 {
-                    ((MainWindow)Application.Current.MainWindow).FrameContent = Application.Current.FindResource(page.Name);
+                    window.FrameContent = Application.Current.FindResource(page.Name);
                 }
             }
         }
 
         public void NavigateTo<TPage>() where TPage : Page => NavigateTo(typeof(TPage));
 
-        public bool NavigationIsOn<TPage>() where TPage : Page => Application.Current.MainWindow is MainWindow window && window.FrameContent is TPage;
+        public bool NavigationIsOn<TPage>() where TPage : Page => Application.Current.MainWindow is MainWindow { FrameContent: TPage };
 
         internal async Task StartSingleplayerAsync()
         {
@@ -195,9 +197,9 @@ namespace NitroxLauncher
                 throw new Exception("Location of Subnautica is unknown. Set the path to it in settings.");
             }
 
-            if (Config.IsPirated)
+            if (PirateDetection.HasTriggered)
             {
-                throw new Exception("Aarrr ! Nitrox walked the plank :(");
+                throw new Exception("Aarrr! Nitrox walked the plank :(");
             }
 
 #if RELEASE
@@ -260,7 +262,7 @@ namespace NitroxLauncher
                 _ => throw new Exception($"Directory '{subnauticaPath}' is not a valid {GameInfo.Subnautica.Name} game installation or the game's platform is unsupported by Nitrox.")
             };
 
-            return game ?? throw new Exception($"Unable to start game through {platform.Name}");
+            return game ?? throw new Exception($"Game failed to start through {platform.Name}");
         }
 
         private void OnSubnauticaExited(object sender, EventArgs e)

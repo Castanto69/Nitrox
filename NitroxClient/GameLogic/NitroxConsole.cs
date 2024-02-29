@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.GameLogic.Helper;
-using NitroxModel.DataStructures.GameLogic;
-using NitroxModel.DataStructures.Util;
-using NitroxModel.Helper;
+using NitroxClient.MonoBehaviours;
+using NitroxModel.DataStructures;
+using NitroxModel.DataStructures.GameLogic.Entities;
 using NitroxModel.Packets;
 using NitroxModel_Subnautica.Helper;
 using UnityEngine;
@@ -12,34 +11,31 @@ namespace NitroxClient.GameLogic
 {
     public class NitroxConsole
     {
-        public static bool DisableConsole = true;
+        public static bool DisableConsole { get; set; } = true;
 
         private readonly IPacketSender packetSender;
-        private readonly Vehicles vehicles;
-        private readonly Item item;
+        private readonly Items items;
 
-        public NitroxConsole(IPacketSender packetSender, Vehicles vehicles, Item item)
+        public NitroxConsole(IPacketSender packetSender, Items items)
         {
             this.packetSender = packetSender;
-            this.vehicles = vehicles;
-            this.item = item;
+            this.items = items;
         }
 
         //List of things that can be spawned : https://subnauticacommands.com/items
         public void Spawn(GameObject gameObject)
         {
-            TechType techType = CraftData.GetTechType(gameObject);
+            TechType techType = GetObjectTechType(gameObject);
 
             try
             {
                 if (VehicleHelper.IsVehicle(techType))
                 {
-                    SpawnVehicle(gameObject);
+                    SpawnVehicle(gameObject, techType);
                 }
                 else
                 {
-                    SpawnItem(gameObject);
-                    //TODO: Add support for no AI creature that need to be spawned as well
+                    DefaultSpawn(gameObject);
                 }
             }
             catch (Exception ex)
@@ -49,35 +45,39 @@ namespace NitroxClient.GameLogic
         }
 
         /// <summary>
-        /// Spawns a Seamoth or an Exosuit
+        /// Spawns Seamoth, Exosuit or Cyclops
         /// </summary>
-        private void SpawnVehicle(GameObject gameObject)
+        private void SpawnVehicle(GameObject gameObject, TechType techType)
         {
-            TechType techType = CraftData.GetTechType(gameObject);
-            VehicleModel vehicleModel = vehicles.BuildVehicleModelFrom(gameObject, techType);
-            Validate.NotNull(vehicleModel, $"Unable to sync spawned vehicle ({vehicleModel.TechType} - {vehicleModel.Id}) from devconsole");
+            NitroxId id = NitroxEntity.GetIdOrGenerateNew(gameObject);
 
-            VehicleSpawned vehicleSpawned = new VehicleSpawned(SerializationHelper.GetBytes(gameObject), vehicleModel);
-            vehicles.AddVehicle(vehicleModel);
+            VehicleWorldEntity vehicleEntity = Vehicles.BuildVehicleWorldEntity(gameObject, id, techType);
+            
+            packetSender.Send(new EntitySpawnedByClient(vehicleEntity));
 
-            Log.Debug($"Spawning vehicle {vehicleModel.TechType} with id {vehicleModel.Id} at {vehicleModel.Position}");
-            packetSender.Send(vehicleSpawned);
-
-            vehicles.SpawnDefaultBatteries(vehicleModel);
+            Log.Debug($"Spawning vehicle {techType} with id {id} at {gameObject.transform.position}");
         }
 
-        /// <summary>
-        /// Spawns a Pickupable item
-        /// </summary>
-        private void SpawnItem(GameObject gameObject)
+        private void DefaultSpawn(GameObject gameObject)
         {
-            Optional<Pickupable> opitem = Optional.OfNullable(gameObject.GetComponent<Pickupable>());
+            items.Dropped(gameObject);
+        }
 
-            if (opitem.HasValue)
+        private static TechType GetObjectTechType(GameObject gameObject)
+        {
+            TechType techType = CraftData.GetTechType(gameObject);
+            if (techType != TechType.None)
             {
-                Log.Debug($"Spawning item {opitem.Value.GetTechName()} at {gameObject.transform.position}");
-                item.Dropped(gameObject, opitem.Value.GetTechType(), gameObject.transform.position);
+                return techType;
             }
+
+            // Cyclops' GameObject doesn't have a way to give its a TechType so we detect it differently
+            if (gameObject.TryGetComponent(out SubRoot subRoot) && subRoot.isCyclops)
+            {
+                return TechType.Cyclops;
+            }
+
+            return TechType.None;
         }
     }
 }

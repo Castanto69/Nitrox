@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Security.Permissions;
-using ProtoBufNet;
 
 namespace NitroxModel.DataStructures.Util
 {
@@ -16,7 +15,7 @@ namespace NitroxModel.DataStructures.Util
     /// </remarks>
     /// <typeparam name="T"></typeparam>
     [Serializable]
-    [ProtoContract]
+    [DataContract]
     public struct Optional<T> : ISerializable where T : class
     {
         private delegate bool HasValueDelegate(T value);
@@ -40,12 +39,9 @@ namespace NitroxModel.DataStructures.Util
                 if (isObj || filter.Key.IsAssignableFrom(type))
                 {
                     // Only create the list in memory when required.
-                    if (valueChecks == null)
-                    {
-                        valueChecks = new List<Func<object, bool>>();
-                    }
+                    valueChecks ??= new List<Func<object, bool>>();
 
-                    // Exclude check for Optional<object> if the type doesn't match the type of the filter (because it'll always fail anyway be null for `o as T`) 
+                    // Exclude check for Optional<object> if the type doesn't match the type of the filter (because it'll always be null for `o as T`)
                     valueChecks.Add(isObj ? o => !filter.Key.IsInstanceOfType(o) || filter.Value(o) : filter.Value);
                 }
             }
@@ -78,7 +74,7 @@ namespace NitroxModel.DataStructures.Util
             return valueChecksForT(value);
         };
 
-        [ProtoMember(1)]
+        [DataMember(Order = 1)]
         public T Value { get; private set; }
 
         public bool HasValue => valueChecksForT(Value);
@@ -129,10 +125,12 @@ namespace NitroxModel.DataStructures.Util
             info.AddValue("value", Value);
         }
 
+#pragma warning disable CS0618 // OptionalEmpty is only allowed to be used internally
         public static implicit operator Optional<T>(OptionalEmpty none)
         {
             return new Optional<T>();
         }
+#pragma warning restore CS0618
 
         public static implicit operator Optional<T>?(T obj)
         {
@@ -154,14 +152,21 @@ namespace NitroxModel.DataStructures.Util
         }
     }
 
+
+    [Obsolete("Use Optional.Empty instead. This struct is required to trick the compiler for the lack of reverse type inference.")]
     public struct OptionalEmpty
     {
+        public OptionalEmpty()
+        {
+        }
     }
 
     public static class Optional
     {
-        internal static Dictionary<Type, Func<object, bool>> ValueConditions = new Dictionary<Type, Func<object, bool>>();
-        public static OptionalEmpty Empty { get; } = new OptionalEmpty();
+        internal static readonly Dictionary<Type, Func<object, bool>> ValueConditions = new();
+#pragma warning disable CS0618 // OptionalEmpty is only allowed to be used internally
+        public static OptionalEmpty Empty { get; } = new();
+#pragma warning restore CS0618
 
         public static Optional<T> Of<T>(T value) where T : class => Optional<T>.Of(value);
         public static Optional<T> OfNullable<T>(T value) where T : class => Optional<T>.OfNullable(value);

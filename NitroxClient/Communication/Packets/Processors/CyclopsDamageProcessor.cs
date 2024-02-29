@@ -31,12 +31,12 @@ namespace NitroxClient.Communication.Packets.Processors
         {
             SubRoot subRoot = NitroxEntity.RequireObjectFrom(packet.Id).GetComponent<SubRoot>();
 
-            using (packetSender.Suppress<CyclopsDamagePointRepaired>())
+            using (PacketSuppressor<CyclopsDamagePointRepaired>.Suppress())
             {
                 SetActiveDamagePoints(subRoot, packet.DamagePointIndexes);
             }
 
-            using (packetSender.Suppress<FireDoused>())
+            using (PacketSuppressor<FireDoused>.Suppress())
             {
                 SetActiveRoomFires(subRoot, packet.RoomFires);
             }
@@ -55,7 +55,7 @@ namespace NitroxClient.Communication.Packets.Processors
                 subRoot.voiceNotificationManager.PlayVoiceNotification(subRoot.hullCriticalNotification, true, false);
             }
 
-            using (packetSender.Suppress<CyclopsDamage>())
+            using (PacketSuppressor<CyclopsDamage>.Suppress())
             {
                 // Not necessary, but used by above code whenever damage is done
                 subRoot.oldHPPercent = subHealth.GetHealthFraction();
@@ -112,8 +112,7 @@ namespace NitroxClient.Communication.Packets.Processors
                 // Looks like the list came in unordered. I've uttered "That shouldn't happen" enough to do sanity checks for what should be impossible.
                 if (packetDamagePointsIndex < damagePointIndexes.Length)
                 {
-                    Log.Error("[CyclopsDamageProcessor packet.DamagePointIds did not fully iterate! Id: " + damagePointIndexes[packetDamagePointsIndex].ToString()
-                        + " had no matching Id in damageManager.damagePoints, or the order is incorrect!]");
+                    Log.Error($"[CyclopsDamageProcessor packet.DamagePointIds did not fully iterate! Id: {damagePointIndexes[packetDamagePointsIndex]} had no matching Id in damageManager.damagePoints, or the order is incorrect!]");
                 }
             }
             else
@@ -142,8 +141,11 @@ namespace NitroxClient.Communication.Packets.Processors
         {
             SubFire subFire = subRoot.gameObject.RequireComponent<SubFire>();
             Dictionary<CyclopsRooms, SubFire.RoomFire> roomFiresDict = subFire.roomFires;
-            NitroxId subRootId = NitroxEntity.GetId(subRoot.gameObject);
-            CyclopsFireData fireNode = null;
+
+            if (!subRoot.TryGetIdOrWarn(out NitroxId subRootId))
+            {
+                return;
+            }
 
             if (roomFires != null && roomFires.Length > 0)
             {
@@ -152,7 +154,7 @@ namespace NitroxClient.Communication.Packets.Processors
                 {
                     for (int nodeIndex = 0; nodeIndex < keyValuePair.Value.spawnNodes.Length; nodeIndex++)
                     {
-                        fireNode = roomFires.SingleOrDefault(x => x.Room == keyValuePair.Key && x.NodeIndex == nodeIndex);
+                        CyclopsFireData fireNode = roomFires.SingleOrDefault(x => x.Room == keyValuePair.Key && x.NodeIndex == nodeIndex);
 
                         // If there's a matching node index, add a fire if there isn't one already. Otherwise remove a fire if there is one
                         if (fireNode == null)
@@ -177,11 +179,11 @@ namespace NitroxClient.Communication.Packets.Processors
             {
                 foreach (KeyValuePair<CyclopsRooms, SubFire.RoomFire> keyValuePair in roomFiresDict)
                 {
-                    for (int nodeIndex = 0; nodeIndex < keyValuePair.Value.spawnNodes.Length; nodeIndex++)
+                    foreach (Transform spawnNode in keyValuePair.Value.spawnNodes)
                     {
-                        if (keyValuePair.Value.spawnNodes[nodeIndex].childCount > 0)
+                        if (spawnNode.childCount > 0)
                         {
-                            keyValuePair.Value.spawnNodes[nodeIndex].GetComponentInChildren<Fire>().Douse(10000);
+                            spawnNode.GetComponentInChildren<Fire>().Douse(10000);
                         }
                     }
                 }

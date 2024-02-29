@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -7,6 +7,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using NitroxModel;
 using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.Helper;
 using NitroxServer.GameLogic.Entities;
@@ -23,7 +24,9 @@ namespace NitroxServer
         private readonly ServerConfig serverConfig;
         private readonly Timer saveTimer;
         private readonly World world;
-        private readonly EntityManager entityManager;
+        private readonly WorldEntityManager worldEntityManager;
+        private readonly EntityRegistry entityRegistry;
+
         private CancellationTokenSource serverCancelSource;
 
         public static Server Instance { get; private set; }
@@ -33,13 +36,14 @@ namespace NitroxServer
 
         public int Port => serverConfig?.ServerPort ?? -1;
 
-        public Server(WorldPersistence worldPersistence, World world, ServerConfig serverConfig, Communication.NitroxServer server, EntityManager entityManager)
+        public Server(WorldPersistence worldPersistence, World world, ServerConfig serverConfig, Communication.NitroxServer server, WorldEntityManager worldEntityManager, EntityRegistry entityRegistry)
         {
             this.worldPersistence = worldPersistence;
             this.serverConfig = serverConfig;
             this.server = server;
             this.world = world;
-            this.entityManager = entityManager;
+            this.worldEntityManager = worldEntityManager;
+            this.entityRegistry = entityRegistry;
 
             Instance = this;
 
@@ -59,23 +63,66 @@ namespace NitroxServer
             StringBuilder builder = new("\n");
             if (viewerPerms is Perms.CONSOLE)
             {
-                builder.AppendLine($" - Save location: {Path.GetFullPath(serverConfig.SaveName)}");
+                builder.AppendLine($" - Save location: {Path.Combine(WorldManager.SavesFolderDir, serverConfig.SaveName)}");
             }
-            builder.AppendLine($" - Aurora's state: {world.EventTriggerer.GetAuroraStateSummary()}");
-            builder.AppendLine($" - Current time: day {world.EventTriggerer.Day} ({Math.Floor(world.EventTriggerer.ElapsedSeconds)}s)");
-            builder.AppendLine($" - Scheduled goals stored: {world.GameData.StoryGoals.ScheduledGoals.Count}");
-            builder.AppendLine($" - Story goals completed: {world.GameData.StoryGoals.CompletedGoals.Count}");
-            builder.AppendLine($" - Radio messages stored: {world.GameData.StoryGoals.RadioQueue.Count}");
-            builder.AppendLine($" - World gamemode: {serverConfig.GameMode}");
-            builder.AppendLine($" - Story goals unlocked: {world.GameData.StoryGoals.GoalUnlocks.Count}");
-            builder.AppendLine($" - Encyclopedia entries: {world.GameData.PDAState.EncyclopediaEntries.Count}");
-            builder.AppendLine($" - Storage slot items: {world.InventoryManager.GetAllStorageSlotItems().Count}");
-            builder.AppendLine($" - Inventory items: {world.InventoryManager.GetAllInventoryItems().Count}");
-            builder.AppendLine($" - Progress tech: {world.GameData.PDAState.CachedProgress.Count}");
-            builder.AppendLine($" - Known tech: {world.GameData.PDAState.KnownTechTypes.Count}");
-            builder.AppendLine($" - Vehicles: {world.VehicleManager.GetVehicles().Count()}");
-                
+            builder.AppendLine($"""
+             - Aurora's state: {world.StoryManager.GetAuroraStateSummary()}
+             - Current time: day {world.TimeKeeper.Day} ({Math.Floor(world.TimeKeeper.ElapsedSeconds)}s)
+             - Scheduled goals stored: {world.GameData.StoryGoals.ScheduledGoals.Count}
+             - Story goals completed: {world.GameData.StoryGoals.CompletedGoals.Count}
+             - Radio messages stored: {world.GameData.StoryGoals.RadioQueue.Count}
+             - World gamemode: {serverConfig.GameMode}
+             - Story goals unlocked: {world.GameData.StoryGoals.GoalUnlocks.Count}
+             - Encyclopedia entries: {world.GameData.PDAState.EncyclopediaEntries.Count}
+             - Known tech: {world.GameData.PDAState.KnownTechTypes.Count}
+            """);
+
             return builder.ToString();
+        }
+
+        public static ServerConfig ServerStartHandler()
+        {
+            string saveDir = null;
+            foreach (string arg in Environment.GetCommandLineArgs())
+            {
+                if (arg.StartsWith(WorldManager.SavesFolderDir, StringComparison.OrdinalIgnoreCase) && Directory.Exists(arg))
+                {
+                    saveDir = arg;
+                    break;
+                }
+            }
+            if (saveDir == null)
+            {
+                // Check if there are any save files
+                WorldManager.Listing[] worldList = WorldManager.GetSaves().ToArray();
+                if (worldList.Any())
+                {
+                    // Get last save file used
+                    string lastSaveAccessed = worldList[0].WorldSaveDir;
+                    if (worldList.Length > 1)
+                    {
+                        for (int i = 1; i < worldList.Length; i++)
+                        {
+                            if (File.GetLastWriteTime(Path.Combine(worldList[i].WorldSaveDir, "WorldData.json")) > File.GetLastWriteTime(lastSaveAccessed))
+                            {
+                                lastSaveAccessed = worldList[i].WorldSaveDir;
+                            }
+                        }
+                    }
+                    saveDir = lastSaveAccessed;
+                }
+                else
+                {
+                    // Create new save file
+                    saveDir = Path.Combine(WorldManager.SavesFolderDir, "My World");
+                    Directory.CreateDirectory(saveDir);
+                    ServerConfig serverConfig = ServerConfig.Load(saveDir);
+                    Log.Debug($"No save file was found, creating a new one...");
+                }
+
+            }
+
+            return ServerConfig.Load(saveDir);
         }
 
         public void Save()
@@ -87,7 +134,7 @@ namespace NitroxServer
 
             IsSaving = true;
 
-            bool savedSuccessfully = worldPersistence.Save(world, serverConfig.SaveName);
+            bool savedSuccessfully = worldPersistence.Save(world, Path.Combine(WorldManager.SavesFolderDir, serverConfig.SaveName));
             if (savedSuccessfully && !string.IsNullOrWhiteSpace(serverConfig.PostSaveCommandPath))
             {
                 try
@@ -125,10 +172,10 @@ namespace NitroxServer
                 {
                     Log.Info("Starting to load all batches up front.");
                     Log.Info("This can take up to several minutes and you can't join until it's completed.");
-                    Log.Info($"{entityManager.GetAllEntities().Count} entities already cached");
-                    if (entityManager.GetAllEntities().Count < 504732)
+                    Log.Info($"{entityRegistry.GetAllEntities().Count} entities already cached");
+                    if (entityRegistry.GetAllEntities().Count < 504732)
                     {
-                        entityManager.LoadAllUnspawnedEntities(serverCancelSource.Token);
+                        worldEntityManager.LoadAllUnspawnedEntities(serverCancelSource.Token);
 
                         Log.Info("Saving newly cached entities.");
                         Save();
@@ -141,8 +188,14 @@ namespace NitroxServer
                 Log.Warn($"Server start was cancelled by user:{Environment.NewLine}{ex.Message}");
                 return false;
             }
-            
-            LogHowToConnectAsync().ConfigureAwait(false);
+
+            LogHowToConnectAsync().ContinueWith(t =>
+            {
+                if (t is { IsFaulted: true, Exception: {} ex})
+                {
+                    Log.Warn($"Failed to show how to connect: {ex.GetFirstNonAggregateMessage()}");
+                }
+            });
             Log.Info($"Server is listening on port {Port} UDP");
             Log.Info($"Using {serverConfig.SerializerMode} as save file serializer");
             Log.InfoSensitive("Server Password: {password}", string.IsNullOrEmpty(serverConfig.ServerPassword) ? "None. Public Server." : serverConfig.ServerPassword);
@@ -177,9 +230,9 @@ namespace NitroxServer
 
         private async Task LogHowToConnectAsync()
         {
-            Task<IPAddress> localIp = Task.Factory.StartNew(NetHelper.GetLanIp);
+            Task<IPAddress> localIp = Task.Run(NetHelper.GetLanIp);
             Task<IPAddress> wanIp = NetHelper.GetWanIpAsync();
-            Task<IPAddress> hamachiIp = Task.Factory.StartNew(NetHelper.GetHamachiIp);
+            Task<IPAddress> hamachiIp = Task.Run(NetHelper.GetHamachiIp);
 
             List<string> options = new();
             options.Add("127.0.0.1 - You (Local)");
@@ -220,7 +273,7 @@ namespace NitroxServer
         public void PauseServer()
         {
             DisablePeriodicSaving();
-            world.EventTriggerer.PauseWorld();
+            world.TimeKeeper.StopCounting();
             Log.Info("Server has paused, waiting for players to connect");
         }
 
@@ -230,7 +283,7 @@ namespace NitroxServer
             {
                 EnablePeriodicSaving();
             }
-            world.EventTriggerer.StartWorld();
+            world.TimeKeeper.StartCounting();
             Log.Info("Server has resumed");
         }
     }

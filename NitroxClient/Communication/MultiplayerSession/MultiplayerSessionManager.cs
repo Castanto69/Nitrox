@@ -1,9 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Threading.Tasks;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.Communication.MultiplayerSession.ConnectionState;
 using NitroxClient.GameLogic;
-using NitroxModel;
+using NitroxModel.DataStructures;
 using NitroxModel.Helper;
 using NitroxModel.MultiplayerSession;
 using NitroxModel.Packets;
@@ -13,7 +13,12 @@ namespace NitroxClient.Communication.MultiplayerSession
 {
     public class MultiplayerSessionManager : IMultiplayerSession, IMultiplayerSessionConnectionContext
     {
-        private readonly HashSet<Type> suppressedPacketsTypes = new HashSet<Type>();
+        private static readonly Task initSerializerTask;
+
+        static MultiplayerSessionManager()
+        {
+            initSerializerTask = Task.Run(Packet.InitSerializer);
+        }
 
         public IClient Client { get; }
         public string IpAddress { get; private set; }
@@ -40,11 +45,12 @@ namespace NitroxClient.Communication.MultiplayerSession
 
         public event MultiplayerSessionConnectionStateChangedEventHandler ConnectionStateChanged;
 
-        public void Connect(string ipAddress, int port)
+        public async Task ConnectAsync(string ipAddress, int port)
         {
             IpAddress = ipAddress;
             ServerPort = port;
-            CurrentState.NegotiateReservation(this);
+            await initSerializerTask;
+            await CurrentState.NegotiateReservationAsync(this);
         }
 
         public void ProcessSessionPolicy(MultiplayerSessionPolicy policy)
@@ -52,21 +58,26 @@ namespace NitroxClient.Communication.MultiplayerSession
             SessionPolicy = policy;
             NitroxConsole.DisableConsole = SessionPolicy.DisableConsole;
             Version localVersion = NitroxEnvironment.Version;
-
-            localVersion = new Version(localVersion.Major, localVersion.Minor);
-            switch (localVersion.CompareTo(SessionPolicy.NitroxVersionAllowed))
+            NitroxVersion nitroxVersion = new(localVersion.Major, localVersion.Minor);
+            switch (nitroxVersion.CompareTo(SessionPolicy.NitroxVersionAllowed))
             {
                 case -1:
-                    Log.InGame($"Your Nitrox installation is out of date. Server: {SessionPolicy.NitroxVersionAllowed}, Yours: {localVersion}.");
+                    Log.Error($"Client is out of date. Server: {SessionPolicy.NitroxVersionAllowed}, Client: {localVersion}");
+                    Log.InGame(Language.main.Get("Nitrox_OutOfDateClient")
+                                           .Replace("{serverVersion}", SessionPolicy.NitroxVersionAllowed.ToString())
+                                           .Replace("{localVersion}", localVersion.ToString()));
                     CurrentState.Disconnect(this);
                     return;
                 case 1:
-                    Log.InGame($"The server runs an older version of Nitrox. Ask the server admin to upgrade or downgrade your Nitrox installation. Server: {SessionPolicy.NitroxVersionAllowed}, Yours: {localVersion}.");
+                    Log.Error($"Server is out of date. Server: {SessionPolicy.NitroxVersionAllowed}, Client: {localVersion}");
+                    Log.InGame(Language.main.Get("Nitrox_OutOfDateServer")
+                                           .Replace("{serverVersion}", SessionPolicy.NitroxVersionAllowed.ToString())
+                                           .Replace("{localVersion}", localVersion.ToString()));
                     CurrentState.Disconnect(this);
                     return;
             }
 
-            CurrentState.NegotiateReservation(this);
+            CurrentState.NegotiateReservationAsync(this);
         }
 
         public void RequestSessionReservation(PlayerSettings playerSettings, AuthenticationContext authenticationContext)
@@ -74,25 +85,27 @@ namespace NitroxClient.Communication.MultiplayerSession
             // If a reservation has already been sent (in which case the client is enqueued in the join queue)
             if (CurrentState.CurrentStage == MultiplayerSessionConnectionStage.AWAITING_SESSION_RESERVATION)
             {
+                Log.Info("Waiting in join queue…");
                 Log.InGame(Language.main.Get("Nitrox_Waiting"));
                 return;
             }
 
             PlayerSettings = playerSettings;
             AuthenticationContext = authenticationContext;
-            CurrentState.NegotiateReservation(this);
+            CurrentState.NegotiateReservationAsync(this);
         }
 
         public void ProcessReservationResponsePacket(MultiplayerSessionReservation reservation)
         {
             if (reservation.ReservationState == MultiplayerSessionReservationState.ENQUEUED_IN_JOIN_QUEUE)
             {
+                Log.Info("Waiting in join queue…");
                 Log.InGame(Language.main.Get("Nitrox_Waiting"));
                 return;
             }
 
             Reservation = reservation;
-            CurrentState.NegotiateReservation(this);
+            CurrentState.NegotiateReservationAsync(this);
         }
 
         public void JoinSession()
@@ -108,22 +121,14 @@ namespace NitroxClient.Communication.MultiplayerSession
             }
         }
 
-        public bool Send(Packet packet)
+        public bool Send<T>(T packet) where T : Packet
         {
-            Type packetType = packet.GetType();
-            if (!suppressedPacketsTypes.Contains(packetType))
+            if (!PacketSuppressor<T>.IsSuppressed)
             {
                 Client.Send(packet);
                 return true;
             }
             return false;
-        }
-
-        public bool IsPacketSuppressed(Type packetType) => suppressedPacketsTypes.Contains(packetType);
-
-        public PacketSuppressor<T> Suppress<T>()
-        {
-            return new PacketSuppressor<T>(suppressedPacketsTypes);
         }
 
         public void UpdateConnectionState(IMultiplayerSessionConnectionState sessionConnectionState)
@@ -142,7 +147,6 @@ namespace NitroxClient.Communication.MultiplayerSession
             if (sessionConnectionState.CurrentStage == MultiplayerSessionConnectionStage.SESSION_RESERVED)
             {
                 Log.PlayerName = username;
-                LANDiscoveryClient.EndSearching();
             }
         }
 

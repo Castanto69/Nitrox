@@ -1,15 +1,17 @@
 ﻿using System;
-using ProtoBufNet;
+using System.Runtime.Serialization;
+using BinaryPack.Attributes;
 
 namespace NitroxModel.DataStructures.GameLogic.Entities.Metadata
 {
     [Serializable]
-    [ProtoContract]
+    [DataContract]
     public class PrecursorTeleporterMetadata : EntityMetadata
     {
-        [ProtoMember(1)]
+        [DataMember(Order = 1)]
         public bool IsOpen { get; }
 
+        [IgnoreConstructor]
         protected PrecursorTeleporterMetadata()
         {
             // Constructor for serialization. Has to be "protected" for json serialization.
@@ -22,7 +24,7 @@ namespace NitroxModel.DataStructures.GameLogic.Entities.Metadata
 
         public override string ToString()
         {
-            return "[PrecursorTeleporterMetadata isOpen: " + IsOpen + "]";
+            return $"[PrecursorTeleporterMetadata isOpen: {IsOpen}]";
         }
     }
 }

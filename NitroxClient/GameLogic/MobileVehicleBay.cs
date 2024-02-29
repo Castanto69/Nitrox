@@ -1,58 +1,49 @@
-﻿using System.Collections.Generic;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.GameLogic.Helper;
 using NitroxClient.MonoBehaviours;
 using NitroxModel.DataStructures;
-using NitroxModel.DataStructures.GameLogic;
-using NitroxModel.DataStructures.Util;
+using NitroxModel.DataStructures.GameLogic.Entities;
 using NitroxModel.Packets;
 using UnityEngine;
-using static NitroxClient.GameLogic.Helper.TransientLocalObjectManager;
 
-namespace NitroxClient.GameLogic
+namespace NitroxClient.GameLogic;
+
+public class MobileVehicleBay
 {
-    public class MobileVehicleBay
+    public static bool TransmitLocalSpawns { get; set; } = true;
+    public static GameObject MostRecentlyCrafted { get; set; }
+
+    private readonly IPacketSender packetSender;
+    private readonly Vehicles vehicles;
+
+    public MobileVehicleBay(IPacketSender packetSender, Vehicles vehicles)
     {
-        private readonly IPacketSender packetSender;
-        private readonly Vehicles vehicles;
+        this.packetSender = packetSender;
+        this.vehicles = vehicles;
+    }
 
-        public MobileVehicleBay(IPacketSender packetSender, Vehicles vehicles)
+    public void BeginCrafting(ConstructorInput constructor, GameObject constructedObject, TechType techType, float duration)
+    {
+        MostRecentlyCrafted = constructedObject;
+
+        // Sometimes build templates, such as the cyclops, are already tagged with IDs.  Remove any that exist to retag.
+        // TODO: this seems to happen because various patches execute when the cyclops template loads (on game load).
+        // This will leave vehicles with NitroxEntity but an empty NitroxId.  We need to chase these down and only call
+        // the code paths when the owner has a simulation lock.
+        Vehicles.RemoveNitroxEntitiesTagging(constructedObject);
+
+        if (!TransmitLocalSpawns)
         {
-            this.packetSender = packetSender;
-            this.vehicles = vehicles;
+            return;
         }
 
-        public void BeginCrafting(GameObject constructor, TechType techType, float duration)
-        {
-            NitroxId constructorId = NitroxEntity.GetId(constructor);
+        constructor.constructor.TryGetIdOrWarn(out NitroxId constructorId);
 
-            Log.Debug("Building item from constructor with id: " + constructorId);
+        NitroxId constructedObjectId = NitroxEntity.GenerateNewId(constructedObject);
 
-            Optional<object> opConstructedObject = TransientLocalObjectManager.Get(TransientObjectType.CONSTRUCTOR_INPUT_CRAFTED_GAMEOBJECT);
+        VehicleWorldEntity vehicleEntity = Vehicles.BuildVehicleWorldEntity(constructedObject, constructedObjectId, techType, constructorId);
 
-            if (opConstructedObject.HasValue)
-            {
-                GameObject constructedObject = (GameObject)opConstructedObject.Value;
-                List<InteractiveChildObjectIdentifier> childIdentifiers = VehicleChildObjectIdentifierHelper.ExtractInteractiveChildren(constructedObject);
+        packetSender.Send(new EntitySpawnedByClient(vehicleEntity));
 
-                VehicleModel vehicleModel = vehicles.BuildVehicleModelFrom(constructedObject, techType);
-                vehicles.AddVehicle(vehicleModel);
-
-                packetSender.Send(new ConstructorBeginCrafting(vehicleModel, constructorId, duration));
-
-                vehicles.SpawnDefaultBatteries(constructedObject, childIdentifiers);
-
-                MonoBehaviour monoBehaviour = constructor.GetComponent<MonoBehaviour>();
-                //We want to store the fallen position of the object to avoid flying object on reload 
-                if (monoBehaviour)
-                {
-                    monoBehaviour.StartCoroutine(vehicles.UpdateVehiclePositionAfterSpawn(vehicleModel, constructedObject, duration + 10.0f));
-                }
-            }
-            else
-            {
-                Log.Error("Could not send packet because there wasn't a corresponding constructed object!");
-            }
-        }
+        constructor.StartCoroutine(vehicles.UpdateVehiclePositionAfterSpawn(constructedObjectId, techType, constructedObject, duration + 10.0f));
     }
 }

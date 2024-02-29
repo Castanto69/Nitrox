@@ -69,17 +69,13 @@ namespace NitroxClient.GameLogic.PlayerLogic.PlayerModel.ColorSwap
 
         private void ExecuteTask(object state)
         {
-            Action<ColorSwapAsyncOperation> task = state as Action<ColorSwapAsyncOperation>;
-
-            if (task == null)
+            if (state is not Action<ColorSwapAsyncOperation> task)
             {
                 //TODO: We need to handle job cancellation during stabilization to ensure that the client shuts down gracefully.
-
-                throw new ArgumentException(@"Cannot execute a null task.", nameof(task));
+                throw new ArgumentException("Cannot execute a null task.", nameof(state));
             }
 
             task.Invoke(this);
-
             Interlocked.Decrement(ref taskCount);
         }
     }

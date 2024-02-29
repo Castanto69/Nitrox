@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using NitroxClient.Unity.Helper;
+using NitroxModel;
 using NitroxModel.Packets;
 using UnityEngine;
 
@@ -16,18 +17,23 @@ namespace NitroxClient.Debuggers
 
         private readonly List<string> filter = new()
         {
-            nameof(Movement), nameof(EntityTransformUpdates), nameof(PlayerStats), nameof(CellEntities), nameof(VehicleMovement), nameof(PlayerCinematicControllerCall),
-            nameof(PlayFMODAsset), nameof(PlayFMODCustomEmitter), nameof(PlayFMODStudioEmitter),  nameof(PlayFMODCustomLoopingEmitter)
+            nameof(PlayerMovement), nameof(EntityTransformUpdates), nameof(PlayerStats), nameof(SpawnEntities), nameof(VehicleMovement), nameof(PlayerCinematicControllerCall),
+            nameof(FMODAssetPacket), nameof(FMODEventInstancePacket), nameof(FMODCustomEmitterPacket), nameof(FMODStudioEmitterPacket), nameof(FMODCustomLoopingEmitterPacket), 
+            nameof(SimulationOwnershipChange), nameof(CellVisibilityChanged)
         };
         private readonly List<PacketDebugWrapper> packets = new List<PacketDebugWrapper>(PACKET_STORED_COUNT);
 
         // vs blacklist
         private bool isWhitelist;
-        private int receivedCount;
         private Vector2 scrollPosition;
+
+        private int receivedCount;
         private int sentCount;
 
-        public NetworkDebugger() : base(600, null, KeyCode.N, true, false, false, GUISkinCreationOptions.DERIVEDCOPY)
+        private uint receivedBytes;
+        private uint sentBytes;
+
+        public NetworkDebugger() : base(600, null, KeyCode.N, true, false, false, GUISkinCreationOptions.DERIVEDCOPY, 330)
         {
             ActiveTab = AddTab("All", RenderTabPackets);
             AddTab("Sent", RenderTabSentPackets);
@@ -36,16 +42,18 @@ namespace NitroxClient.Debuggers
             AddTab("Filter", RenderTabFilter);
         }
 
-        public void PacketSent(Packet packet)
+        public void PacketSent(Packet packet, int byteSize)
         {
             AddPacket(packet, true);
             sentCount++;
+            sentBytes += (uint)byteSize;
         }
 
-        public void PacketReceived(Packet packet)
+        public void PacketReceived(Packet packet, int byteSize)
         {
             AddPacket(packet, false);
             receivedCount++;
+            receivedBytes += (uint)byteSize;
         }
 
         protected override void OnSetSkin(GUISkin skin)
@@ -75,7 +83,7 @@ namespace NitroxClient.Debuggers
         {
             using (new GUILayout.VerticalScope("Box"))
             {
-                GUILayout.Label($"Sent: {sentCount} - Received: {receivedCount}");
+                RenderPacketTotals();
 
                 scrollPosition = GUILayout.BeginScrollView(scrollPosition, GUILayout.Height(300));
                 RenderPacketList(ToRender.BOTH);
@@ -87,7 +95,7 @@ namespace NitroxClient.Debuggers
         {
             using (new GUILayout.VerticalScope("Box"))
             {
-                GUILayout.Label($"Sent: {sentCount} - Received: {receivedCount}");
+                RenderPacketTotals();
 
                 scrollPosition = GUILayout.BeginScrollView(scrollPosition, GUILayout.Height(300));
                 RenderPacketList(ToRender.SENT);
@@ -99,7 +107,7 @@ namespace NitroxClient.Debuggers
         {
             using (new GUILayout.VerticalScope("Box"))
             {
-                GUILayout.Label($"Sent: {sentCount} - Received: {receivedCount}");
+                RenderPacketTotals();
 
                 scrollPosition = GUILayout.BeginScrollView(scrollPosition, GUILayout.Height(300));
                 RenderPacketList(ToRender.RECEIVED);
@@ -111,7 +119,7 @@ namespace NitroxClient.Debuggers
         {
             using (new GUILayout.VerticalScope("Box"))
             {
-                GUILayout.Label($"Sent: {sentCount} - Received: {receivedCount}");
+                RenderPacketTotals();
 
                 scrollPosition = GUILayout.BeginScrollView(scrollPosition, GUILayout.Height(300));
                 foreach (KeyValuePair<Type, int> kv in countByType.OrderBy(e => -e.Value)) // descending
@@ -126,7 +134,7 @@ namespace NitroxClient.Debuggers
         {
             using (new GUILayout.VerticalScope("Box"))
             {
-                GUILayout.Label($"Sent: {sentCount} - Received: {receivedCount}");
+                RenderPacketTotals();
                 using (new GUILayout.HorizontalScope())
                 {
                     isWhitelist = GUILayout.Toggle(isWhitelist, "Is Whitelist");
@@ -148,6 +156,11 @@ namespace NitroxClient.Debuggers
                 }
                 GUILayout.EndScrollView();
             }
+        }
+
+        private void RenderPacketTotals()
+        {
+            GUILayout.Label($"Sent: {sentCount} ({sentBytes.AsByteUnitText()}) - Received: {receivedCount} ({receivedBytes.AsByteUnitText()})");
         }
 
         private void RenderPacketList(ToRender toRender)
@@ -240,7 +253,7 @@ namespace NitroxClient.Debuggers
 
     public interface INetworkDebugger
     {
-        void PacketSent(Packet packet);
-        void PacketReceived(Packet packet);
+        void PacketSent(Packet packet, int size);
+        void PacketReceived(Packet packet, int size);
     }
 }

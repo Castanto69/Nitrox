@@ -1,64 +1,49 @@
-﻿using System.Reflection;
-using HarmonyLib;
-using NitroxClient.Communication.Abstract;
-using NitroxClient.MonoBehaviours;
+using System.Reflection;
+using NitroxClient.GameLogic;
 using NitroxClient.Unity.Helper;
 using NitroxModel.DataStructures;
 using NitroxModel.Helper;
-using NitroxModel.Packets;
-using UnityEngine;
 
-namespace NitroxPatcher.Patches.Dynamic
+namespace NitroxPatcher.Patches.Dynamic;
+
+public sealed partial class SubNameInput_OnNameChange_Patch : NitroxPatch, IDynamicPatch
 {
-    public class SubNameInput_OnNameChange_Patch : NitroxPatch, IDynamicPatch
+    public static readonly MethodInfo TARGET_METHOD = Reflect.Method((SubNameInput t) => t.OnNameChange(default(string)));
+
+    public static void Postfix(SubNameInput __instance)
     {
-        public static readonly MethodInfo TARGET_METHOD = Reflect.Method((SubNameInput t) => t.OnNameChange(default(string)));
-
-        public static void Postfix(SubNameInput __instance)
+        if (TryGetTargetId(__instance, out object target, out NitroxId targetId))
         {
-            SubName subname = __instance.target;
-            if (subname)
+            Resolve<Entities>().EntityMetadataChanged(target, targetId);
+        }
+    }
+
+    public static bool TryGetTargetId(SubNameInput subNameInput, out object target, out NitroxId targetId)
+    {
+        SubName subName = subNameInput.target;
+        if (!subName)
+        {
+            target = null;
+            targetId = null;
+            return false;
+        }
+        if (subName.TryGetComponent(out Vehicle vehicle))
+        {
+            target = vehicle;
+            return vehicle.TryGetNitroxId(out targetId);
+        }
+        else if (subName.TryGetComponentInParent(out Rocket rocket, true))
+        {
+            // For some reason only the rocket has a full functioning ghost with a different NitroxId when spawning/constructing, so we are ignoring it.
+            if (rocket.TryGetComponentInChildren(out VFXConstructing constructing, true) && !constructing.isDone)
             {
-                GameObject parentVehicle;
-                NitroxId controllerId = null;
-
-                if (subname.TryGetComponent(out Vehicle vehicle))
-                {
-                    GameObject baseCell = __instance.gameObject.RequireComponentInParent<BaseCell>().gameObject;
-                    GameObject moonpool = baseCell.RequireComponentInChildren<BaseFoundationPiece>().gameObject;
-
-                    controllerId = NitroxEntity.GetId(moonpool);
-                    parentVehicle = vehicle.gameObject;
-                }
-                else if (subname.TryGetComponentInParent(out SubRoot subRoot))
-                {
-                    parentVehicle = subRoot.gameObject;
-                }
-                else if (subname.TryGetComponentInParent(out Rocket rocket))
-                {
-                    // For some reason only the rocket has a full functioning ghost with a different NitroxId when spawning/constructing, so we are ignoring it.
-                    if (rocket.TryGetComponentInChildren(out VFXConstructing constructing) && !constructing.isDone)
-                    {
-                        return;
-                    }
-
-                    parentVehicle = rocket.gameObject;
-                }
-                else
-                {
-                    Log.Error($"[SubNameInput_OnNameChange_Patch] The GameObject {subname.gameObject.name} doesn't have a Vehicle/SubRoot/Rocket component.");
-                    return;
-                }
-
-                NitroxId vehicleId = NitroxEntity.GetId(parentVehicle);
-                VehicleNameChange packet = new(controllerId, vehicleId, subname.GetName());
-                Resolve<IPacketSender>().Send(packet);
+                target = null;
+                targetId = null;
+                return false;
             }
         }
-
-        public override void Patch(Harmony harmony)
-        {
-            PatchPostfix(harmony, TARGET_METHOD);
-        }
+        // Cyclops and Rocket has their SubNameInput and SubName in the same GameObject, marked with a NitroxEntity
+        target = subNameInput;
+        return subNameInput.TryGetNitroxId(out targetId);
     }
 }

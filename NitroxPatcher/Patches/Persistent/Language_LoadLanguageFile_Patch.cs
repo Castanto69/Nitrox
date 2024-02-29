@@ -12,24 +12,25 @@ namespace NitroxPatcher.Patches.Persistent;
 
 public class Language_LoadLanguageFile_Patch : NitroxPatch, IPersistentPatch
 {
-    private static readonly MethodInfo targetMethod = Reflect.Method((Language t) => t.LoadLanguageFile(default));
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Language t) => t.LoadLanguageFile(default));
 
     private static readonly Dictionary<string, Tuple<string, string>> languageToIsoCode = new(); // First Tuple item is region specific (en-US), second isn't (en)
 
     public static void Postfix(string language, Dictionary<string, string> ___strings)
     {
-        if (TryLoadLanguageFile(languageToIsoCode[language].Item1, ___strings))
+        if (!TryLoadLanguageFile("en", ___strings)) //Loading english as fallback for missing files or keys
         {
+            Log.Error($"The English language file could not be loaded");
             return;
         }
 
-        if (TryLoadLanguageFile(languageToIsoCode[language].Item2, ___strings))
+        if (!TryLoadLanguageFile(languageToIsoCode[language].Item1, ___strings))
         {
-            return;
+            if (!TryLoadLanguageFile(languageToIsoCode[language].Item2, ___strings))
+            {
+                Log.Warn($"No language file was found for {language}. Using English as fallback");
+            }
         }
-
-        Log.Warn($"No language file was found for {language}. Using English as fallback");
-        TryLoadLanguageFile("en", ___strings);
 
         Language.main.ParseMetaData();
     }
@@ -50,10 +51,10 @@ public class Language_LoadLanguageFile_Patch : NitroxPatch, IPersistentPatch
 
             foreach (string key in json.Keys)
             {
-                JsonData jsonKey = json[key];
-                if (jsonKey.IsString)
+                JsonData entry = json[key];
+                if (entry.IsString)
                 {
-                    strings[key] = (string)jsonKey;
+                    strings[key] = (string)entry;
                 }
             }
 
@@ -85,6 +86,6 @@ public class Language_LoadLanguageFile_Patch : NitroxPatch, IPersistentPatch
             languageToIsoCode.Add("Spanish (Latin America)", new Tuple<string, string>("es-419", "es"));
         }
 
-        PatchPostfix(harmony, targetMethod);
+        PatchPostfix(harmony, TARGET_METHOD, ((Action<string, Dictionary<string, string>>)Postfix).Method);
     }
 }

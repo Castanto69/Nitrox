@@ -3,7 +3,7 @@ using System.IO;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
-using NitroxModel.DataStructures.JsonConverter;
+using NitroxServer.Serialization.Json;
 
 namespace NitroxServer.Serialization.Upgrade
 {
@@ -16,10 +16,10 @@ namespace NitroxServer.Serialization.Upgrade
         public void UpgradeSaveFiles(string saveDir, string fileEnding)
         {
             Log.Info($"┌── Executing {GetType().Name}");
-            string baseDataPath = Path.Combine(saveDir, "BaseData" + fileEnding);
-            string playerDataPath = Path.Combine(saveDir, "PlayerData" + fileEnding);
-            string worldDataPath = Path.Combine(saveDir, "WorldData" + fileEnding);
-            string entityDataPath = Path.Combine(saveDir, "EntityData" + fileEnding);
+            string baseDataPath = Path.Combine(saveDir, $"BaseData{fileEnding}");
+            string playerDataPath = Path.Combine(saveDir, $"PlayerData{fileEnding}");
+            string worldDataPath = Path.Combine(saveDir, $"WorldData{fileEnding}");
+            string entityDataPath = Path.Combine(saveDir, $"EntityData{fileEnding}");
 
             Log.Info("├── Parsing raw json");
             JObject baseData = JObject.Parse(File.ReadAllText(baseDataPath));

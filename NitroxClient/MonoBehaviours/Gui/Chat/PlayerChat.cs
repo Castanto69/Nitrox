@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using NitroxClient.GameLogic.ChatUI;
@@ -73,7 +74,7 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
             if (entries.Count != 0 && entries.Last().PlayerName == playerName)
             {
                 chatLogEntry = entries.Last();
-                chatLogEntry.MessageText += "\n" + message;
+                chatLogEntry.MessageText += $"{Environment.NewLine}{message}";
                 chatLogEntry.UpdateTime();
                 chatLogEntryObject = chatLogEntry.EntryObject;
             }
@@ -130,7 +131,7 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
                 while (canvasGroup.alpha < 1f)
                 {
                     canvasGroup.alpha += 0.01f;
-                    yield return new WaitForSeconds(0.0005f);
+                    yield return null;
                 }
             }
             else
@@ -138,7 +139,7 @@ namespace NitroxClient.MonoBehaviours.Gui.Chat
                 while (canvasGroup.alpha > 0f)
                 {
                     canvasGroup.alpha -= 0.01f;
-                    yield return new WaitForSeconds(0.005f);
+                    yield return null;
                 }
             }
         }

@@ -1,103 +1,142 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Security.Permissions;
-using ProtoBufNet;
+using BinaryPack.Attributes;
 
-namespace NitroxModel.DataStructures
+namespace NitroxModel.DataStructures;
+
+/// <summary>
+///     Used to reference a Unity GameObject and makes it possible to synchronize a GameObject between connected players.
+/// </summary>
+[Serializable]
+[DataContract]
+public class NitroxId : ISerializable, IEquatable<NitroxId>, IComparable<NitroxId>
 {
-    /// <summary>
-    ///     Used to reference a Unity GameObject and makes it possible to synchronize a GameObject between connected players.
-    /// </summary>
-    [ProtoContract]
-    [Serializable]
-    public class NitroxId : ISerializable
+    [DataMember(Order = 1)]
+    [SerializableMember]
+    private Guid guid { get; init; }
+
+    [IgnoreConstructor]
+    public NitroxId()
     {
-        [ProtoMember(1)]
-        private Guid guid;
+        guid = Guid.NewGuid();
+    }
 
-        public NitroxId()
-        {
-            guid = Guid.NewGuid();
-        }
+    /// <summary>
+    ///     Create a NitroxId from a string
+    /// </summary>
+    /// <param name="str">a NitroxID as string</param>
+    public NitroxId(string str)
+    {
+        guid = new Guid(str);
+    }
 
-        /// <summary>
-        ///     Create a NitroxId from a string
-        /// </summary>
-        /// <param name="str">a NitroxID as string</param>
-        public NitroxId(string str)
-        {
-            guid = new Guid(str);
-        }
+    public NitroxId(Guid guid)
+    {
+        this.guid = guid;
+    }
 
-        public NitroxId(Guid guid)
-        {
-            this.guid = guid;
-        }
+    public NitroxId(byte[] bytes)
+    {
+        guid = new Guid(bytes);
+    }
 
-        public NitroxId(byte[] bytes)
-        {
-            guid = new Guid(bytes);
-        }
+    protected NitroxId(SerializationInfo info, StreamingContext context)
+    {
+        byte[] bytes = (byte[])info.GetValue("id", typeof(byte[]));
+        guid = new Guid(bytes);
+    }
 
-        protected NitroxId(SerializationInfo info, StreamingContext context)
-        {
-            byte[] bytes = (byte[])info.GetValue("id", typeof(byte[]));
-            guid = new Guid(bytes);
-        }
+    [SecurityPermission(SecurityAction.Demand, SerializationFormatter = true)]
+    public virtual void GetObjectData(SerializationInfo info, StreamingContext context)
+    {
+        info.AddValue("id", guid.ToByteArray());
+    }
 
-        public static bool operator ==(NitroxId id1, NitroxId id2)
+    public static bool operator ==(NitroxId id1, NitroxId id2)
+    {
+        if (id1 is null)
         {
-            if (ReferenceEquals(id1, null))
+            if (id2 is null)
             {
-                if (ReferenceEquals(id2, null))
-                {
-                    return true;
-                }
-                return false;
+                return true;
             }
-            return id1.Equals(id2);
+            return false;
         }
+        return id1.Equals(id2);
+    }
 
-        public static bool operator !=(NitroxId id1, NitroxId id2)
+    public static bool operator !=(NitroxId id1, NitroxId id2)
+    {
+        return !(id1 == id2);
+    }
+
+    public override bool Equals(object obj)
+    {
+        if (ReferenceEquals(null, obj))
         {
-            return !(id1 == id2);
+            return false;
         }
-
-        [SecurityPermissionAttribute(SecurityAction.Demand, SerializationFormatter = true)]
-        public virtual void GetObjectData(SerializationInfo info, StreamingContext context)
+        
+        if (obj.GetType() != GetType())
         {
-            info.AddValue("id", guid.ToByteArray());
+            return false;
         }
 
-        public override bool Equals(object obj)
+        return Equals((NitroxId)obj);
+    }
+
+        
+    public bool Equals(NitroxId other)
+    {
+        if (ReferenceEquals(null, other))
         {
-            NitroxId id = obj as NitroxId;
-
-            return id != null &&
-                   guid.Equals(id.guid);
+            return false;
         }
 
-        public override int GetHashCode()
+        if (ReferenceEquals(this, other))
         {
-            return -1324198676 + EqualityComparer<Guid>.Default.GetHashCode(guid);
+            return true;
         }
 
-        public override string ToString()
+        return guid.Equals(other.guid);
+    }
+        
+    public override int GetHashCode()
+    {
+        return guid.GetHashCode();
+    }
+
+    public override string ToString()
+    {
+        return guid.ToString();
+    }
+
+    [IgnoredMember]
+    private static int[] byteOrder = { 15, 14, 13, 12, 11, 10, 9, 8, 6, 7, 4, 5, 0, 1, 2, 3 };
+
+    public NitroxId Increment()
+    {
+        byte[] bytes = guid.ToByteArray();
+        bool canIncrement = byteOrder.Any(i => ++bytes[i] != 0);
+        Guid nextGuid = new(canIncrement ? bytes : new byte[16]);
+
+        return new NitroxId(nextGuid);
+    }
+
+    public int CompareTo(NitroxId other)
+    {
+        if (ReferenceEquals(this, other))
         {
-            return guid.ToString();
+            return 0;
         }
 
-        static int[] byteOrder = { 15, 14, 13, 12, 11, 10, 9, 8, 6, 7, 4, 5, 0, 1, 2, 3 };
-
-        public NitroxId Increment()
+        if (ReferenceEquals(null, other))
         {
-            byte[] bytes = guid.ToByteArray();
-            bool canIncrement = byteOrder.Any(i => ++bytes[i] != 0);
-            Guid nextGuid = new(canIncrement ? bytes : new byte[16]);
-
-            return new NitroxId(nextGuid);
+            return 1;
         }
+
+        return guid.CompareTo(other.guid);
     }
 }

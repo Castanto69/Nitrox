@@ -1,4 +1,4 @@
-﻿using NitroxModel.DataStructures.GameLogic;
+using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.Helper;
 using NitroxModel.Serialization;
 using NitroxModel.Server;
@@ -15,23 +15,17 @@ namespace NitroxServer.Serialization
         [PropertyDescription("Set to true to Cache entities for the whole map on next run. \nWARNING! Will make server load take longer on the cache run but players will gain a performance boost when entering new areas.")]
         public bool CreateFullEntityCache = false;
 
-        private int portSetting = ServerList.DEFAULT_PORT;
-
         private int saveIntervalSetting = 120000;
 
         private string postSaveCommandPath = string.Empty;
 
-        private string saveNameSetting = "world";
+        private string saveNameSetting = "My World";
         public override string FileName => "server.cfg";
 
         [PropertyDescription("Leave blank for a random spawn position")]
         public string Seed { get; set; }
 
-        public int ServerPort
-        {
-            get => portSetting;
-            set => portSetting = value;
-        }
+        public int ServerPort { get; set; } = ServerList.DEFAULT_PORT;
 
         [PropertyDescription("Measured in milliseconds")]
         public int SaveInterval
@@ -40,7 +34,7 @@ namespace NitroxServer.Serialization
 
             set
             {
-                Validate.IsTrue(value > 1000, "SaveInterval must be greater than 1000");
+                Validate.IsTrue(value >= 1000, "SaveInterval must be greater than 1000");
                 saveIntervalSetting = value;
             }
         }
@@ -93,8 +87,8 @@ namespace NitroxServer.Serialization
 
         public string AdminPassword { get; set; } = StringHelper.GenerateRandomString(12);
 
-        [PropertyDescription("Possible values:", typeof(ServerGameMode))]
-        public ServerGameMode GameMode { get; set; } = ServerGameMode.SURVIVAL;
+        [PropertyDescription("Possible values:", typeof(NitroxGameMode))]
+        public NitroxGameMode GameMode { get; set; } = NitroxGameMode.SURVIVAL;
 
         [PropertyDescription("Possible values:", typeof(ServerSerializerMode))]
         public ServerSerializerMode SerializerMode { get; set; } = ServerSerializerMode.JSON;
@@ -113,7 +107,7 @@ namespace NitroxServer.Serialization
         [PropertyDescription("Recommended to keep at 0.1f which is the default starting value. If set to 0 then new players are cured by default.")]
         public float DefaultInfectionValue { get; set; } = 0.1f;
 
-        public bool IsHardcore => GameMode == ServerGameMode.HARDCORE;
+        public bool IsHardcore => GameMode == NitroxGameMode.HARDCORE;
         public bool IsPasswordRequired => ServerPassword != string.Empty;
         public PlayerStatsData DefaultPlayerStats => new(DefaultOxygenValue, DefaultMaxOxygenValue, DefaultHealthValue, DefaultHungerValue, DefaultThirstValue, DefaultInfectionValue);
         [PropertyDescription("If set to true, the server will try to open port on your router via UPnP")]
@@ -121,11 +115,7 @@ namespace NitroxServer.Serialization
         [PropertyDescription("Determines whether the server will listen for and reply to LAN discovery requests.")]
         public bool LANDiscoveryEnabled { get; set; } = true;
 
-        public static ServerConfig Load()
-        {
-            ServerConfig config = new();
-            config.Update();
-            return config;
-        }
+        [PropertyDescription("When true, will reject any build actions detected as desynced")]
+        public bool SafeBuilding { get; set; } = true;
     }
 }

@@ -1,26 +1,25 @@
-﻿using System.Reflection;
-using HarmonyLib;
+using System.Reflection;
 using NitroxClient.GameLogic;
-using NitroxClient.MonoBehaviours;
-using NitroxModel.Core;
+using NitroxClient.GameLogic.PlayerLogic;
 using NitroxModel.DataStructures;
 using NitroxModel.Helper;
 
-namespace NitroxPatcher.Patches.Dynamic
+namespace NitroxPatcher.Patches.Dynamic;
+
+public sealed partial class Vehicle_OnKill_Patch : NitroxPatch, IDynamicPatch
 {
-    public class Vehicle_OnKill_Patch : NitroxPatch, IDynamicPatch
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Vehicle t) => t.OnKill());
+
+    public static void Prefix(Vehicle __instance)
     {
-        private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Vehicle t) => t.OnKill());
-
-        public static void Prefix(Vehicle __instance)
+        if (__instance.TryGetIdOrWarn(out NitroxId id) && Resolve<SimulationOwnership>().HasExclusiveLock(id))
         {
-            NitroxId id = NitroxEntity.GetId(__instance.gameObject);
-            NitroxServiceLocator.LocateService<SimulationOwnership>().StopSimulatingEntity(id);
+            Resolve<SimulationOwnership>().StopSimulatingEntity(id);
+            Resolve<Vehicles>().BroadcastDestroyedVehicle(id);
         }
-
-        public override void Patch(Harmony harmony)
+        foreach (RemotePlayerIdentifier identifier in __instance.GetComponentsInChildren<RemotePlayerIdentifier>(true))
         {
-            PatchPrefix(harmony, TARGET_METHOD);
+            identifier.RemotePlayer.ResetStates();
         }
     }
 }

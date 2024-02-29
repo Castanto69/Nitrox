@@ -1,9 +1,6 @@
-﻿using NitroxModel.DataStructures.GameLogic;
-using NitroxModel.DataStructures.GameLogic.Buildings.Rotation;
+using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.DataStructures.Unity;
 using NitroxModel_Subnautica.DataStructures.GameLogic;
-using NitroxModel_Subnautica.DataStructures.GameLogic.Buildings.Rotation;
-using NitroxModel_Subnautica.DataStructures.GameLogic.Buildings.Rotation.Metadata;
 using NitroxModel_Subnautica.DataStructures.Surrogates;
 using NitroxServer.Serialization;
 using ProtoBufNet.Meta;
@@ -32,20 +29,9 @@ namespace NitroxServer_Subnautica.Serialization
             Model.Add(typeof(Transform), false).SetSurrogate(typeof(NitroxTransform));
             Model.Add(typeof(GameObject), false).SetSurrogate(typeof(NitroxServer.UnityStubs.GameObject));
 
-            MetaType vehicleModel = Model.Add(typeof(VehicleModel), false);
-            vehicleModel.AddSubType(100, typeof(ExosuitModel));
-            vehicleModel.AddSubType(200, typeof(SeamothModel));
-            vehicleModel.AddSubType(300, typeof(CyclopsModel));
-            vehicleModel.AddSubType(400, typeof(NeptuneRocketModel));
-
             MetaType movementData = Model.Add(typeof(VehicleMovementData), false);
-            movementData.AddSubType(100, typeof(ExosuitMovementData));
-
-            MetaType builderMetadata = Model.Add(typeof(BuilderMetadata), false);
-            builderMetadata.AddSubType(50, typeof(CorridorBuilderMetadata));
-            builderMetadata.AddSubType(60, typeof(MapRoomBuilderMetadata));
-            builderMetadata.AddSubType(70, typeof(BaseModuleBuilderMetadata));
-            builderMetadata.AddSubType(80, typeof(AnchoredFaceBuilderMetadata));
+            movementData.AddSubType(100, typeof(BasicVehicleMovementData));
+            movementData.AddSubType(200, typeof(ExosuitMovementData));
         }
     }
 }

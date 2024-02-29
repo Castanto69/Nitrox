@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -21,20 +22,21 @@ namespace Nitrox.BuildTool
 
         public static string GeneratedOutputDir => Path.Combine(ProcessDir, "generated_files");
 
+        private const int LEGACY_BRANCH_SUBNAUTICA_VERSION = 68598;
+
         public static async Task Main(string[] args)
         {
+
             AppDomain.CurrentDomain.UnhandledException += (sender, eventArgs) =>
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine(eventArgs.ExceptionObject);
-                Console.ResetColor();
-
+                LogError(eventArgs.ExceptionObject.ToString());
                 Exit((eventArgs.ExceptionObject as Exception)?.HResult ?? 1);
             };
 
-            GameInstallData game = await Task.Factory.StartNew(EnsureGame).ConfigureAwait(false);
+            GameInstallData game = await Task.Run(EnsureGame);
             Console.WriteLine($"Found game at {game.InstallDir}");
-            await Task.Factory.StartNew(() => EnsurePublicizedAssemblies(game)).ConfigureAwait(false);
+            AbortIfInvalidGameVersion(game);
+            await EnsurePublicizedAssembliesAsync(game);
 
             Exit();
         }
@@ -45,6 +47,40 @@ namespace Nitrox.BuildTool
             Console.WriteLine("Press any key to continue . . .");
             Console.ReadKey(true);
             Environment.Exit(exitCode);
+        }
+
+        private static void LogError(string message)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine(message);
+            Console.ResetColor();
+        }
+
+        private static void AbortIfInvalidGameVersion(GameInstallData game)
+        {
+            string gameVersionFile = Path.Combine(game.InstallDir, "Subnautica_Data", "StreamingAssets", "SNUnmanagedData", "plastic_status.ignore");
+            if (!File.Exists(gameVersionFile))
+            {
+                return;
+            }
+            if (!int.TryParse(File.ReadAllText(gameVersionFile), out int version))
+            {
+                return;
+            }
+            if (version == -1)
+            {
+                return;
+            }
+            if (version > LEGACY_BRANCH_SUBNAUTICA_VERSION)
+            {
+                return;
+            }
+
+            LogError($"""
+                        Game version is {version}, which is not supported by Nitrox.
+                        Please update your game to the latest version.
+                        """);
+            Exit(2);
         }
 
         private static GameInstallData EnsureGame()
@@ -77,22 +113,24 @@ namespace Nitrox.BuildTool
                 // Retry if the saved path is invalid
                 if (!Directory.Exists(game.InstallDir))
                 {
-                    game = new GameInstallData(NitroxUser.SubnauticaPath);
+                    game = new GameInstallData(NitroxUser.GamePath);
                 }
-                
+
                 if (!ValidateUnityGame(game, out string error))
                 {
                     throw new Exception(error);
                 }
             }
 
-            game ??= new GameInstallData(NitroxUser.SubnauticaPath);
+            game ??= new GameInstallData(NitroxUser.GamePath);
             game.TrySave(cacheFile);
             return game;
         }
 
-        private static void EnsurePublicizedAssemblies(GameInstallData game)
+        private static async Task EnsurePublicizedAssembliesAsync(GameInstallData game)
         {
+            static void LogReceived(object sender, string message) => Console.WriteLine(message);
+
             if (Directory.Exists(Path.Combine(GeneratedOutputDir, "publicized_assemblies")))
             {
                 Console.WriteLine("Assemblies are already publicized.");
@@ -100,12 +138,18 @@ namespace Nitrox.BuildTool
             }
 
             string[] dllsToPublicize = Directory.GetFiles(game.ManagedDllsDir, "Assembly-*.dll");
-            foreach (string publicizedDll in Publicizer.Execute(dllsToPublicize,
-                                                                "",
-                                                                Path.Combine(GeneratedOutputDir, "publicized_assemblies")))
+            Publicizer.LogReceived += LogReceived;
+            Stopwatch sw = Stopwatch.StartNew();
+            try
             {
-                Console.WriteLine($"Publicized dll: {publicizedDll}");
+                await Publicizer.PublicizeAsync(dllsToPublicize, "", Path.Combine(GeneratedOutputDir, "publicized_assemblies"));
             }
+            finally
+            {
+                sw.Stop();
+                Publicizer.LogReceived -= LogReceived;
+            }
+            Console.WriteLine($"Publicized {dllsToPublicize.Length} DLL(s) in {Math.Round(sw.Elapsed.TotalSeconds, 2)}s");
         }
     }
 }

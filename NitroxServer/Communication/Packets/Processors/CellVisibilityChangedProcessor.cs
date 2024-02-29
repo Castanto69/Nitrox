@@ -1,56 +1,54 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using NitroxModel.DataStructures;
 using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.Packets;
 using NitroxServer.Communication.Packets.Processors.Abstract;
-using NitroxServer.GameLogic;
 using NitroxServer.GameLogic.Entities;
 
-namespace NitroxServer.Communication.Packets.Processors
+namespace NitroxServer.Communication.Packets.Processors;
+
+public class CellVisibilityChangedProcessor : AuthenticatedPacketProcessor<CellVisibilityChanged>
 {
-    class CellVisibilityChangedProcessor : AuthenticatedPacketProcessor<CellVisibilityChanged>
+    private readonly EntitySimulation entitySimulation;
+    private readonly WorldEntityManager worldEntityManager;
+
+    public CellVisibilityChangedProcessor(EntitySimulation entitySimulation, WorldEntityManager worldEntityManager)
     {
-        private readonly EntityManager entityManager;
-        private readonly EntitySimulation entitySimulation;
-        private readonly PlayerManager playerManager;
+        this.entitySimulation = entitySimulation;
+        this.worldEntityManager = worldEntityManager;
+    }
 
-        public CellVisibilityChangedProcessor(EntityManager entityManager, EntitySimulation entitySimulation, PlayerManager playerManager)
+    public override void Process(CellVisibilityChanged packet, Player player)
+    {
+        player.AddCells(packet.Added);
+        player.RemoveCells(packet.Removed);
+
+        List<Entity> totalEntities = [];
+        List<SimulatedEntity> totalSimulationChanges = [];
+
+        foreach (AbsoluteEntityCell addedCell in packet.Added)
         {
-            this.entityManager = entityManager;
-            this.entitySimulation = entitySimulation;
-            this.playerManager = playerManager;
+            worldEntityManager.LoadUnspawnedEntities(addedCell.BatchId, false);
+
+            totalSimulationChanges.AddRange(entitySimulation.GetSimulationChangesForCell(player, addedCell));
+            totalEntities.AddRange(worldEntityManager.GetEntities(addedCell));
         }
 
-        public override void Process(CellVisibilityChanged packet, Player player)
+        foreach (AbsoluteEntityCell removedCell in packet.Removed)
         {
-            player.AddCells(packet.Added);
-            player.RemoveCells(packet.Removed);
-
-            SendNewlyVisibleEntities(player, packet.Added);
-
-            List<SimulatedEntity> ownershipChanges = entitySimulation.CalculateSimulationChangesFromCellSwitch(player, packet.Added, packet.Removed);
-            BroadcastSimulationChanges(ownershipChanges);
+            entitySimulation.FillWithRemovedCells(player, removedCell, totalSimulationChanges);
         }
 
-        private void SendNewlyVisibleEntities(Player player, AbsoluteEntityCell[] visibleCells)
+        // Simulation update must be broadcasted before the entities are spawned
+        if (totalSimulationChanges.Count > 0)
         {
-            List<Entity> newlyVisibleEntities = entityManager.GetVisibleEntities(visibleCells);
-
-            if (newlyVisibleEntities.Count > 0)
-            {
-                CellEntities cellEntities = new CellEntities(newlyVisibleEntities);
-                player.SendPacket(cellEntities);
-            }
+            entitySimulation.BroadcastSimulationChanges(new(totalSimulationChanges));
         }
 
-        private void BroadcastSimulationChanges(List<SimulatedEntity> ownershipChanges)
+        if (totalEntities.Count > 0)
         {
-            if (ownershipChanges.Count > 0)
-            {
-                // TODO: This should be moved to `SimulationOwnership`
-                SimulationOwnershipChange ownershipChange = new SimulationOwnershipChange(ownershipChanges);
-                playerManager.SendPacketToAllPlayers(ownershipChange);
-            }
+            SpawnEntities batchEntities = new(totalEntities);
+            player.SendPacket(batchEntities);
         }
     }
 }

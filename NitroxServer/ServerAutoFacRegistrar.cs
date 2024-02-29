@@ -1,4 +1,4 @@
-﻿global using NitroxModel.Logger;
+global using NitroxModel.Logger;
 using System.Reflection;
 using Autofac;
 using NitroxModel.Core;
@@ -8,9 +8,6 @@ using NitroxServer.Communication.Packets.Processors;
 using NitroxServer.Communication.Packets.Processors.Abstract;
 using NitroxServer.ConsoleCommands.Abstract;
 using NitroxServer.ConsoleCommands.Processor;
-using NitroxServer.GameLogic;
-using NitroxServer.GameLogic.Entities;
-using NitroxServer.Serialization;
 using NitroxServer.Serialization.Upgrade;
 using NitroxServer.Serialization.World;
 
@@ -29,13 +26,10 @@ namespace NitroxServer
 
         private static void RegisterCoreDependencies(ContainerBuilder containerBuilder)
         {
-            containerBuilder.Register(c => ServerConfig.Load()).SingleInstance();
+            containerBuilder.Register(c => Server.ServerStartHandler()).SingleInstance();
             containerBuilder.RegisterType<Server>().SingleInstance();
-            containerBuilder.RegisterType<PlayerManager>().SingleInstance();
             containerBuilder.RegisterType<DefaultServerPacketProcessor>().InstancePerLifetimeScope();
             containerBuilder.RegisterType<PacketHandler>().InstancePerLifetimeScope();
-            containerBuilder.RegisterType<EscapePodManager>().InstancePerLifetimeScope();
-            containerBuilder.RegisterType<EntitySimulation>().SingleInstance();
             containerBuilder.RegisterType<ConsoleCommandProcessor>().SingleInstance();
 
             containerBuilder.RegisterType<LiteNetLibServer>()
@@ -48,14 +42,16 @@ namespace NitroxServer
             containerBuilder.RegisterType<WorldPersistence>().SingleInstance();
 
             containerBuilder.Register(c => c.Resolve<WorldPersistence>().Load()).SingleInstance();
-            containerBuilder.Register(c => c.Resolve<World>().BaseManager).SingleInstance();
-            containerBuilder.Register(c => c.Resolve<World>().VehicleManager).SingleInstance();
-            containerBuilder.Register(c => c.Resolve<World>().InventoryManager).SingleInstance();
+            containerBuilder.Register(c => c.Resolve<World>().BuildingManager).SingleInstance();
+            containerBuilder.Register(c => c.Resolve<World>().TimeKeeper).SingleInstance();
             containerBuilder.Register(c => c.Resolve<World>().PlayerManager).SingleInstance();
-            containerBuilder.Register(c => c.Resolve<World>().EventTriggerer).SingleInstance();
+            containerBuilder.Register(c => c.Resolve<World>().StoryManager).SingleInstance();
             containerBuilder.Register(c => c.Resolve<World>().ScheduleKeeper).SingleInstance();
             containerBuilder.Register(c => c.Resolve<World>().SimulationOwnershipData).SingleInstance();
-            containerBuilder.Register(c => c.Resolve<World>().EntityManager).SingleInstance();
+            containerBuilder.Register(c => c.Resolve<World>().WorldEntityManager).SingleInstance();
+            containerBuilder.Register(c => c.Resolve<World>().EntityRegistry).SingleInstance();
+            containerBuilder.Register(c => c.Resolve<World>().EntitySimulation).SingleInstance();
+            containerBuilder.Register(c => c.Resolve<World>().EscapePodManager).SingleInstance();
             containerBuilder.Register(c => c.Resolve<World>().BatchEntitySpawner).SingleInstance();
             containerBuilder.Register(c => c.Resolve<World>().GameData).SingleInstance();
             containerBuilder.Register(c => c.Resolve<World>().GameData.PDAState).SingleInstance();

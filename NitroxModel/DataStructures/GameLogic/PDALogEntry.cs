@@ -1,18 +1,20 @@
 ﻿using System;
-using ProtoBufNet;
+using System.Runtime.Serialization;
+using BinaryPack.Attributes;
 
 namespace NitroxModel.DataStructures.GameLogic
 {
     [Serializable]
-    [ProtoContract]
+    [DataContract]
     public class PDALogEntry
     {
-        [ProtoMember(1)]
+        [DataMember(Order = 1)]
         public string Key;
 
-        [ProtoMember(2)]
+        [DataMember(Order = 2)]
         public float Timestamp;
 
+        [IgnoreConstructor]
         protected PDALogEntry()
         {
             // Constructor for serialization. Has to be "protected" for json serialization.

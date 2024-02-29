@@ -1,4 +1,5 @@
-﻿using System.Linq;
+using System;
+using System.Linq;
 using DiscordGameSDKWrapper;
 using NitroxClient.Communication.Abstract;
 using NitroxClient.MonoBehaviours.Gui.MainMenu;
@@ -13,6 +14,7 @@ namespace NitroxClient.MonoBehaviours.Discord;
 public class DiscordClient : MonoBehaviour
 {
     private const long CLIENT_ID = 405122994348752896;
+    private const int RETRY_INTERVAL = 60;
 
     private static DiscordClient main;
     private static DiscordGameSDKWrapper.Discord discord;
@@ -20,46 +22,86 @@ public class DiscordClient : MonoBehaviour
     private static Activity activity;
     private static bool showingWindow;
 
-    private void OnEnable()
+    private void Awake()
     {
         if (main)
         {
-            Log.Error($"Tried to instantiate a second {nameof(DiscordClient)}");
+            Log.Error($"[Discord] Tried to instantiate a second {nameof(DiscordClient)}");
             return;
         }
-
+        activity = new();
         main = this;
         DontDestroyOnLoad(gameObject);
+        Log.Info("[Discord] Starting Discord client");
+        StartDiscordHook();
+    }
 
-        discord = new DiscordGameSDKWrapper.Discord(CLIENT_ID, (ulong)CreateFlags.NoRequireDiscord);
-        discord.SetLogHook(DiscordGameSDKWrapper.LogLevel.Debug, (level, message) => Log.Write((NitroxModel.Logger.LogLevel)level, "[Discord] " + message));
-
-        activityManager = discord.GetActivityManager();
-
-        activityManager.RegisterSteam((uint)GameInfo.Subnautica.SteamAppId);
-        activityManager.OnActivityJoinRequest += ActivityJoinRequest;
-        activityManager.OnActivityJoin += ActivityJoin;
-
-        activity = new Activity();
+    private void StartDiscordHook()
+    {
+        try
+        {
+            discord = new DiscordGameSDKWrapper.Discord(CLIENT_ID, (ulong)CreateFlags.NoRequireDiscord);
+            discord.SetLogHook(DiscordGameSDKWrapper.LogLevel.Debug, (level, message) => Log.Write((NitroxModel.Logger.LogLevel)level, $"[Discord] {message}"));
+            activityManager = discord.GetActivityManager();
+            
+            activityManager.RegisterSteam((uint)GameInfo.Subnautica.SteamAppId);
+            activityManager.OnActivityJoinRequest += ActivityJoinRequest;
+            activityManager.OnActivityJoin += ActivityJoin;
+            if (!string.IsNullOrEmpty(activity.State))
+            {
+                UpdateActivity();
+            }
+        }
+        catch (Exception ex)
+        {
+            DisposeAndScheduleHookRestart();
+            Log.ErrorOnce($"Encountered an error while starting Discord hook, will retry every {RETRY_INTERVAL} seconds: {ex.Message}");
+        }
     }
 
     private void OnDisable()
     {
-        Log.Info("[Discord] Shutdown");
-        discord.Dispose();
+        Log.Info("[Discord] Shutdown client");
+        discord?.Dispose();
+    }
+
+    private void OnDestroy()
+    {
+        if (main == this)
+        {
+            main = null;
+            activity = default;
+        }
     }
 
     private void Update()
     {
-        discord?.RunCallbacks();
+        try
+        {
+            discord?.RunCallbacks();
+        }
+        catch (Exception ex)
+        {
+            // Happens when Discord is closed while Nitrox has its Discord hook running (and for other reason)
+            DisposeAndScheduleHookRestart();
+            Log.ErrorOnce($"An error occured while running callbacks for Discord, will retry every {RETRY_INTERVAL} seconds: {ex.Message}");
+        }
+    }
+
+    private void DisposeAndScheduleHookRestart()
+    {
+        discord?.Dispose();
+        discord = null;
+        Invoke(nameof(StartDiscordHook), RETRY_INTERVAL);
     }
 
     private void ActivityJoin(string secret)
     {
         Log.Info("[Discord] Joining Server");
+
         if (SceneManager.GetActiveScene().name != "StartScreen" || !MainMenuMultiplayerPanel.Main)
         {
-            Log.InGame("Please press on the \"Multiplayer\" in the MainMenu if you want to join a session.");
+            Log.InGame(Language.main.Get("Nitrox_DiscordMultiplayerMenu"));
             Log.Warn("[Discord] Can't join a server outside of the main-menu.");
             return;
         }
@@ -67,7 +109,7 @@ public class DiscordClient : MonoBehaviour
         string[] splitSecret = secret.Split(':');
         string ip = string.Join(":", splitSecret.Take(splitSecret.Length - 1));
         string port = splitSecret.Last();
-        MainMenuMultiplayerPanel.OpenJoinServerMenu(ip, port);
+        _ = MainMenuMultiplayerPanel.OpenJoinServerMenuAsync(ip, port);
     }
 
     private void ActivityJoinRequest(ref User user)
@@ -80,21 +122,21 @@ public class DiscordClient : MonoBehaviour
         }
         else
         {
-            Log.Debug("[Discord] Request window is already active.");
+            Log.Warn("[Discord] Request window is already active.");
         }
     }
 
     public static void InitializeRPMenu()
     {
-        activity.State = "In menu";
+        activity.State = Language.main.Get("Nitrox_DiscordMainMenuState");
         activity.Assets.LargeImage = "icon";
         UpdateActivity();
     }
 
     public static void InitializeRPInGame(string username, int playerCount, int maxConnections)
     {
-        activity.State = "In game";
-        activity.Details = "Playing as " + username;
+        activity.State = Language.main.Get("Nitrox_DiscordInGameState");
+        activity.Details = Language.main.Get("Nitrox_DiscordInGame").Replace("{PLAYER}", username);
         activity.Timestamps.Start = 0;
         activity.Party.Size.CurrentSize = playerCount;
         activity.Party.Size.MaxSize = maxConnections;
@@ -105,7 +147,7 @@ public class DiscordClient : MonoBehaviour
 
     public static void UpdateIpPort(string ipPort)
     {
-        activity.Party.Id = "NitroxPartyID:" + ipPort;
+        activity.Party.Id = $"NitroxPartyID:{ipPort}";
         activity.Secrets.Join = ipPort;
         UpdateActivity();
     }
@@ -118,7 +160,7 @@ public class DiscordClient : MonoBehaviour
 
     private static void UpdateActivity()
     {
-        activityManager.UpdateActivity(activity, (result) =>
+        activityManager?.UpdateActivity(activity, (result) =>
         {
             if (result != Result.Ok)
             {
@@ -130,14 +172,15 @@ public class DiscordClient : MonoBehaviour
     public static void RespondJoinRequest(long userID, ActivityJoinRequestReply reply)
     {
         showingWindow = false;
-        activityManager.SendRequestReply(userID, reply, (result) =>
+        activityManager?.SendRequestReply(userID, reply, (result) =>
         {
             if (result == Result.Ok)
             {
-                Log.Info($"[Discord] Responded successfully {reply}  to {userID}");
+                Log.Info($"[Discord] Responded successfully {reply} to {userID}");
             }
             else
             {
+                Log.InGame($"[Discord] {Language.main.Get("Nitrox_Failure")}");
                 Log.Error($"[Discord] {result}: Failed to send join response");
             }
         });

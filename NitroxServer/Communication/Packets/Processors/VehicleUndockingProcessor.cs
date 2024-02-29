@@ -1,36 +1,41 @@
-﻿using NitroxModel.DataStructures.GameLogic;
-using NitroxModel.DataStructures.Util;
+using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.Packets;
 using NitroxServer.Communication.Packets.Processors.Abstract;
 using NitroxServer.GameLogic;
-using NitroxServer.GameLogic.Vehicles;
+using NitroxServer.GameLogic.Entities;
 
-namespace NitroxServer.Communication.Packets.Processors
+namespace NitroxServer.Communication.Packets.Processors;
+
+public class VehicleUndockingProcessor : AuthenticatedPacketProcessor<VehicleUndocking>
 {
-    class VehicleUndockingProcessor : AuthenticatedPacketProcessor<VehicleUndocking>
+    private readonly PlayerManager playerManager;
+    private readonly EntityRegistry entityRegistry;
+
+    public VehicleUndockingProcessor(PlayerManager playerManager, EntityRegistry entityRegistry)
     {
-        private readonly PlayerManager playerManager;
-        private readonly VehicleManager vehicleManager;
+        this.playerManager = playerManager;
+        this.entityRegistry = entityRegistry;
+    }
 
-        public VehicleUndockingProcessor(PlayerManager playerManager, VehicleManager vehicleManager)
+    public override void Process(VehicleUndocking packet, Player player)
+    {
+        if (packet.UndockingStart)
         {
-            this.playerManager = playerManager;
-            this.vehicleManager = vehicleManager;
-        }
-
-        public override void Process(VehicleUndocking packet, Player player)
-        {
-            Optional<VehicleModel> vehicle = vehicleManager.GetVehicleModel(packet.VehicleId);
-
-            if (!vehicle.HasValue)
+            if (!entityRegistry.TryGetEntityById(packet.VehicleId, out Entity vehicleEntity))
             {
+                Log.Error($"Unable to find vehicle to undock {packet.VehicleId}");
                 return;
             }
 
-            VehicleModel vehicleModel = vehicle.Value;
-            vehicleModel.DockingBayId = Optional.Empty;
+            if (!entityRegistry.GetEntityById(vehicleEntity.ParentId).HasValue)
+            {
+                Log.Error($"Unable to find docked vehicles parent {vehicleEntity.ParentId} to undock from");
+                return;
+            }
 
-            playerManager.SendPacketToOtherPlayers(packet, player);
+            entityRegistry.RemoveFromParent(vehicleEntity);
         }
+
+        playerManager.SendPacketToOtherPlayers(packet, player);
     }
 }

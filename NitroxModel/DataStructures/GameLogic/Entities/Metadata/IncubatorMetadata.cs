@@ -1,18 +1,20 @@
 ﻿using System;
-using ProtoBufNet;
+using System.Runtime.Serialization;
+using BinaryPack.Attributes;
 
 namespace NitroxModel.DataStructures.GameLogic.Entities.Metadata
 {
     [Serializable]
-    [ProtoContract]
+    [DataContract]
     public class IncubatorMetadata : EntityMetadata
     {
-        [ProtoMember(1)]
+        [DataMember(Order = 1)]
         public bool Powered { get; }
 
-        [ProtoMember(2)]
+        [DataMember(Order = 2)]
         public bool Hatched { get; }
 
+        [IgnoreConstructor]
         protected IncubatorMetadata()
         {
             //Constructor for serialization. Has to be "protected" for json serialization.

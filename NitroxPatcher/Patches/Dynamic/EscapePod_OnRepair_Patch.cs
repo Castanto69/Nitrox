@@ -1,24 +1,21 @@
-﻿using System.Reflection;
-using HarmonyLib;
+using System.Reflection;
 using NitroxClient.GameLogic;
-using NitroxModel.Core;
+using NitroxModel.DataStructures.GameLogic.Entities.Metadata;
+using NitroxModel.DataStructures;
 using NitroxModel.Helper;
+using NitroxModel_Subnautica.DataStructures;
 
-namespace NitroxPatcher.Patches.Dynamic
+namespace NitroxPatcher.Patches.Dynamic;
+
+public sealed partial class EscapePod_OnRepair_Patch : NitroxPatch, IDynamicPatch
 {
-    public class EscapePod_OnRepair_Patch : NitroxPatch, IDynamicPatch
+    public static readonly MethodInfo TARGET_METHOD = Reflect.Method((EscapePod t) => t.OnRepair());
+
+    public static void Prefix(EscapePod __instance)
     {
-        public static readonly MethodInfo TARGET_METHOD = Reflect.Method((EscapePod t) => t.OnRepair());
-
-        public static bool Prefix(EscapePod __instance)
+        if (__instance.TryGetIdOrWarn(out NitroxId id))
         {
-            NitroxServiceLocator.LocateService<EscapePodManager>().OnRepairedByMe(__instance);
-            return true;
-        }
-
-        public override void Patch(Harmony harmony)
-        {
-            PatchPrefix(harmony, TARGET_METHOD);
+            Resolve<Entities>().BroadcastMetadataUpdate(id, new RepairedComponentMetadata(TechType.EscapePod.ToDto()));
         }
     }
 }

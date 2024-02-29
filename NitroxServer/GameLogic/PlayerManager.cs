@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -8,9 +8,9 @@ using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.DataStructures.Unity;
 using NitroxModel.DataStructures.Util;
 using NitroxModel.Helper;
-using NitroxModel.Logger;
 using NitroxModel.MultiplayerSession;
 using NitroxModel.Packets;
+using NitroxModel.Server;
 using NitroxServer.Communication;
 using NitroxServer.Serialization;
 
@@ -43,6 +43,11 @@ namespace NitroxServer.GameLogic
         public List<Player> GetConnectedPlayers()
         {
             return ConnectedPlayers().ToList();
+        }
+
+        public List<Player> GetConnectedPlayersExcept(Player excludePlayer)
+        {
+            return ConnectedPlayers().Where(player => player != excludePlayer).ToList();
         }
 
         public IEnumerable<Player> GetAllPlayers()
@@ -82,7 +87,7 @@ namespace NitroxServer.GameLogic
                     // Don't enqueue the request if there is already another enqueued request by the same user
                     return new MultiplayerSessionReservation(correlationId, MultiplayerSessionReservationState.REJECTED);
                 }
-                
+
                 JoinQueue.Enqueue(new KeyValuePair<NitroxConnection, MultiplayerSessionReservationRequest>(
                                       connection,
                                       new MultiplayerSessionReservationRequest(correlationId, playerSettings, authenticationContext)));
@@ -116,8 +121,10 @@ namespace NitroxServer.GameLogic
             bool hasSeenPlayerBefore = player != null;
             ushort playerId = hasSeenPlayerBefore ? player.Id : ++currentPlayerId;
             NitroxId playerNitroxId = hasSeenPlayerBefore ? player.GameObjectId : new NitroxId();
+            NitroxGameMode gameMode = hasSeenPlayerBefore ? player.GameMode : serverConfig.GameMode;
 
-            PlayerContext playerContext = new(playerName, playerId, playerNitroxId, !hasSeenPlayerBefore, playerSettings);
+            // TODO: At some point, store the muted state of a player
+            PlayerContext playerContext = new(playerName, playerId, playerNitroxId, !hasSeenPlayerBefore, playerSettings, false, gameMode);
             string reservationKey = Guid.NewGuid().ToString();
 
             reservations.Add(reservationKey, playerContext);
@@ -131,7 +138,7 @@ namespace NitroxServer.GameLogic
 
             return new MultiplayerSessionReservation(correlationId, playerId, reservationKey);
         }
-        
+
         private void InitialSyncTimerElapsed(object state)
         {
             if (state is InitialSyncTimerData timerData && !timerData.Disposing)
@@ -191,15 +198,19 @@ namespace NitroxServer.GameLogic
                     playerContext,
                     connection,
                     NitroxVector3.Zero,
+                    NitroxQuaternion.Identity,
                     playerContext.PlayerNitroxId,
                     Optional.Empty,
                     serverConfig.DefaultPlayerPerm,
                     serverConfig.DefaultPlayerStats,
+                    serverConfig.GameMode,
                     new List<NitroxTechType>(),
-                    Array.Empty<string>(),
+                    Array.Empty<Optional<NitroxId>>(),
                     new List<EquippedItemData>(),
                     new List<EquippedItemData>(),
-                    new HashSet<string>()
+                    new Dictionary<string, float>(),
+                    new Dictionary<string, PingInstancePreference>(),
+                    new List<int>()
                 );
                 allPlayersByName[playerContext.PlayerName] = player;
             }
@@ -208,14 +219,12 @@ namespace NitroxServer.GameLogic
             player.PlayerContext = playerContext;
             player.Connection = connection;
 
+            // reconnecting players need to have their cell visibility refreshed
+            player.ClearVisibleCells();
+
             assetPackage.Player = player;
             assetPackage.ReservationKey = null;
             reservations.Remove(reservationKey);
-
-            if (ConnectedPlayers().Count() == 1)
-            {
-                Server.Instance.ResumeServer();
-            }
 
             return player;
         }
@@ -250,10 +259,14 @@ namespace NitroxServer.GameLogic
             }
         }
 
-        public void FinishProcessingReservation()
+        public void FinishProcessingReservation(Player player = null)
         {
             initialSyncTimer.Dispose();
             PlayerCurrentlyJoining = false;
+            if (player != null)
+            {
+                BroadcastPlayerJoined(player);
+            }
 
             Log.Info($"Finished processing reservation. Remaining requests: {JoinQueue.Count}");
 
@@ -327,6 +340,12 @@ namespace NitroxServer.GameLogic
             return assetsByConnection.Values
                 .Where(assetPackage => assetPackage.Player != null)
                 .Select(assetPackage => assetPackage.Player);
+        }
+        
+        public void BroadcastPlayerJoined(Player player)
+        {
+            PlayerJoinedMultiplayerSession playerJoinedPacket = new(player.PlayerContext, player.SubRootId, player.Entity);
+            SendPacketToOtherPlayers(playerJoinedPacket, player);
         }
     }
 }

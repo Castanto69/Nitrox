@@ -1,7 +1,5 @@
 ﻿using NitroxClient.Communication.Abstract;
-using NitroxClient.MonoBehaviours;
 using NitroxModel.DataStructures;
-using NitroxModel.Helper;
 using NitroxModel.Packets;
 
 namespace NitroxClient.GameLogic
@@ -17,10 +15,12 @@ namespace NitroxClient.GameLogic
 
         public void Clicked(MedicalCabinet medicalCabinet)
         {
-            NitroxId id = NitroxEntity.GetId(medicalCabinet.gameObject);
-            bool doorOpen = medicalCabinet.doorOpen;
+            if (!medicalCabinet.TryGetIdOrWarn(out NitroxId id))
+            {
+                return;
+            }
 
-            MedicalCabinetClicked cabinetClicked = new(id, doorOpen, medicalCabinet.hasMedKit, medicalCabinet.timeSpawnMedKit);
+            MedicalCabinetClicked cabinetClicked = new(id, medicalCabinet.doorOpen, medicalCabinet.hasMedKit, medicalCabinet.timeSpawnMedKit);
             packetSender.Send(cabinetClicked);
         }
     }

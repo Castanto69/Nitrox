@@ -10,10 +10,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Reference Include="iTween">
-            <HintPath>$(GameManagedDir)\iTween.dll</HintPath>
-            <Private>false</Private>
-        </Reference>
         <Reference Include="LitJson">
             <HintPath>$(GameManagedDir)\LitJson.dll</HintPath>
             <Private>false</Private>
@@ -24,7 +20,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="DiscordGameSDKWrapper" Version="2.5.6" />
+      <PackageReference Include="DiscordGameSDKWrapper" Version="3.2.1" />
     </ItemGroup>
 
 </Project>

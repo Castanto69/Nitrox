@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
-using NitroxModel.Discovery;
+using NitroxModel.Discovery.Models;
 using NitroxModel.Helper;
 using NitroxModel.Platforms.OS.Shared;
 using NitroxModel.Platforms.OS.Windows.Internal;
@@ -17,15 +17,16 @@ namespace NitroxModel.Platforms.Store
         public static Steam Instance => instance ??= new Steam();
 
         public string Name => nameof(Steam);
-        public Platform platform => Platform.STEAM;
+        public Platform Platform => Platform.STEAM;
 
         public bool OwnsGame(string gameDirectory)
         {
-            return File.Exists(Path.Combine(gameDirectory, "steam_api64.dll"));
+            return File.Exists(Path.Combine(gameDirectory, "Subnautica_Data", "Plugins", "x86_64", "steam_api64.dll"));
         }
 
         public async Task<ProcessEx> StartPlatformAsync()
         {
+            // If steam is already running, do not start it.
             ProcessEx steam = ProcessEx.GetFirstProcess("steam", p => p.MainModuleDirectory != null && File.Exists(Path.Combine(p.MainModuleDirectory, "steamclient.dll")));
             if (steam != null)
             {
@@ -46,10 +47,16 @@ namespace NitroxModel.Platforms.Store
                 Arguments = "-silent" // Don't show Steam window
             }));
 
-            // Wait for Steam to get ready.
+            // Wait for Steam to get ready. Steam will update the PID and set the ActiveUser to 0 while starting. Once UI is loaded it will update ActiveUser to > 0 value.
             await RegistryEx.CompareAsync<int>(@"SOFTWARE\Valve\Steam\ActiveProcess\pid",
                                                v => v == steam.Id,
                                                TimeSpan.FromSeconds(45));
+            await RegistryEx.CompareAsync<int>(@"SOFTWARE\Valve\Steam\ActiveProcess\ActiveUser",
+                                               v => v == 0,
+                                               TimeSpan.FromSeconds(20));
+            await RegistryEx.CompareAsync<int>(@"SOFTWARE\Valve\Steam\ActiveProcess\ActiveUser",
+                                               v => v > 0,
+                                               TimeSpan.FromSeconds(20));
             return steam;
         }
 

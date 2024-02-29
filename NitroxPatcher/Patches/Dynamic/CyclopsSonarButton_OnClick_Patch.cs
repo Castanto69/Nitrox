@@ -1,26 +1,19 @@
-﻿using System.Reflection;
-using HarmonyLib;
+using System.Reflection;
 using NitroxClient.GameLogic;
-using NitroxClient.MonoBehaviours;
 using NitroxModel.DataStructures;
 using NitroxModel.Helper;
 
-namespace NitroxPatcher.Patches.Dynamic
+namespace NitroxPatcher.Patches.Dynamic;
+
+public sealed partial class CyclopsSonarButton_OnClick_Patch : NitroxPatch, IDynamicPatch
 {
-    class CyclopsSonarButton_OnClick_Patch : NitroxPatch, IDynamicPatch
+    public static readonly MethodInfo TARGET_METHOD = Reflect.Method((CyclopsSonarButton t) => t.OnClick());
+
+    public static void Postfix(CyclopsSonarButton __instance)
     {
-        public static readonly MethodInfo TARGET_METHOD = Reflect.Method((CyclopsSonarButton t) => t.OnClick());
-
-        public static void Postfix(CyclopsSonarButton __instance)
+        if (__instance.subRoot.TryGetIdOrWarn(out NitroxId id))
         {
-            NitroxId id = NitroxEntity.GetId(__instance.subRoot.gameObject);
-            Resolve<Cyclops>().BroadcastChangeSonarState(id, __instance.sonarActive);
+            Resolve<Cyclops>().BroadcastMetadataChange(id);
         }
-
-        public override void Patch(Harmony harmony)
-        {
-            PatchPostfix(harmony, TARGET_METHOD);
-        }
-
     }
 }

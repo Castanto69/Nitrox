@@ -1,34 +1,33 @@
-﻿using System.Linq;
 using System.Reflection;
-using HarmonyLib;
 using NitroxClient.GameLogic;
-using NitroxModel.Core;
+using NitroxModel.DataStructures;
+using NitroxModel.DataStructures.Util;
 using NitroxModel.Helper;
 
-namespace NitroxPatcher.Patches.Dynamic
+namespace NitroxPatcher.Patches.Dynamic;
+
+public sealed partial class QuickSlots_Bind_Patch : NitroxPatch, IDynamicPatch
 {
-    public class QuickSlots_Bind_Patch : NitroxPatch, IDynamicPatch
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((QuickSlots t) => t.Bind(default(int), default(InventoryItem)));
+
+    public static void Postfix(QuickSlots __instance)
     {
-        private static readonly MethodInfo TARGET_METHOD = Reflect.Method((QuickSlots t) => t.Bind(default(int), default(InventoryItem)));
-        private static LocalPlayer player;
+        Optional<NitroxId>[] slotItemIds = new Optional<NitroxId>[__instance.binding.Length];
 
-        public static void Postfix(QuickSlots __instance)
+        for (int i = 0; i < __instance.binding.Length; i++)
         {
-            // TODO: The binding should only be send on a timer and/or on disconnect. But this functionality/framework is not implemented yet.
-            string[] binding = __instance.SaveBinding();
+            InventoryItem inventoryItem = __instance.binding[i];
 
-            for (int i = 0; i < binding.Length; i++)
+            if (inventoryItem != null && inventoryItem.item)
             {
-                binding[i] ??= "null"; // ProtoBuf can't handle null objects in Lists
+                slotItemIds[i] = inventoryItem.item.GetId();
             }
-
-            player.BroadcastQuickSlotsBindingChanged(binding.ToList());
+            else
+            {
+                slotItemIds[i] = Optional.Empty;
+            }
         }
 
-        public override void Patch(Harmony harmony)
-        {
-            player = NitroxServiceLocator.LocateService<LocalPlayer>();
-            PatchPostfix(harmony, TARGET_METHOD);
-        }
+        Resolve<LocalPlayer>().BroadcastQuickSlotsBindingChanged(slotItemIds);
     }
 }

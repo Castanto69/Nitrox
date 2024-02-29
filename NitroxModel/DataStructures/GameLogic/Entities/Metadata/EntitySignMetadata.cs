@@ -1,27 +1,29 @@
 ﻿using System;
-using ProtoBufNet;
+using System.Runtime.Serialization;
+using BinaryPack.Attributes;
 
 namespace NitroxModel.DataStructures.GameLogic.Entities.Metadata;
 
 [Serializable]
-[ProtoContract]
+[DataContract]
 public class EntitySignMetadata : EntityMetadata
 {
-    [ProtoMember(1)]
-    public string Text { get; set; }
+    [DataMember(Order = 1)]
+    public string Text { get; }
 
-    [ProtoMember(2)]
-    public int ColorIndex { get; set; }
+    [DataMember(Order = 2)]
+    public int ColorIndex { get; }
 
-    [ProtoMember(3)]
-    public int ScaleIndex { get; set; }
+    [DataMember(Order = 3)]
+    public int ScaleIndex { get; }
 
-    [ProtoMember(4)]
-    public bool[] Elements { get; set; }
+    [DataMember(Order = 4)]
+    public bool[] Elements { get; }
 
-    [ProtoMember(5)]
-    public bool Background { get; set; }
+    [DataMember(Order = 5)]
+    public bool Background { get; }
 
+    [IgnoreConstructor]
     protected EntitySignMetadata()
     {
         //Constructor for serialization. Has to be "protected" for json serialization.

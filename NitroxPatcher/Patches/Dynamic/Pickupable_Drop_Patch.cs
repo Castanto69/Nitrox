@@ -1,25 +1,19 @@
-﻿using System.Reflection;
-using HarmonyLib;
+using System.Reflection;
 using NitroxClient.GameLogic;
-using NitroxModel.Core;
 using NitroxModel.Helper;
-using UnityEngine;
 
-namespace NitroxPatcher.Patches.Dynamic
+namespace NitroxPatcher.Patches.Dynamic;
+
+public sealed partial class Pickupable_Drop_Patch : NitroxPatch, IDynamicPatch
 {
-    public class Pickupable_Drop_Patch : NitroxPatch, IDynamicPatch
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Pickupable t) => t.Drop(default, default, default));
+
+    public static void Postfix(Pickupable __instance)
     {
-        private static readonly MethodInfo TARGET_METHOD = Reflect.Method((Pickupable t) => t.Drop(default(Vector3), default(Vector3), default(bool)));
-
-        public static void Postfix(Pickupable __instance, Vector3 dropPosition)
+        if (PlaceTool_Place_Patch.RunningThisFrame)
         {
-            NitroxServiceLocator.LocateService<Item>().Dropped(__instance.gameObject, __instance.GetTechType(), dropPosition);
+            return;
         }
-
-        public override void Patch(Harmony harmony)
-        {
-            PatchPostfix(harmony, TARGET_METHOD);
-        }
+        Resolve<Items>().Dropped(__instance.gameObject, __instance.GetTechType());
     }
 }
-

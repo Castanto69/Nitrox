@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using NitroxClient.Communication;
@@ -6,10 +6,10 @@ using NitroxClient.Communication.Abstract;
 using NitroxClient.Communication.MultiplayerSession;
 using NitroxClient.Communication.Packets.Processors.Abstract;
 using NitroxClient.GameLogic;
+using NitroxClient.GameLogic.Bases;
 using NitroxClient.GameLogic.ChatUI;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.ColorSwap;
-using NitroxClient.Helpers;
 using NitroxClient.MonoBehaviours.Discord;
 using NitroxClient.MonoBehaviours.Gui.MainMenu;
 using NitroxModel.Core;
@@ -17,16 +17,20 @@ using NitroxModel.Packets;
 using NitroxModel.Packets.Processors.Abstract;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UWE;
 
 namespace NitroxClient.MonoBehaviours
 {
     public class Multiplayer : MonoBehaviour
     {
         public static Multiplayer Main;
-
+        private readonly Dictionary<Type, PacketProcessor> packetProcessorCache = new();
+        private IClient client;
         private IMultiplayerSession multiplayerSession;
         private PacketReceiver packetReceiver;
         private ThrottledPacketSender throttledPacketSender;
+        private GameLogic.Terrain terrain;
+
         public bool InitialSyncCompleted { get; set; }
 
         /// <summary>
@@ -34,8 +38,47 @@ namespace NitroxClient.MonoBehaviours
         /// </summary>
         public static bool Active => Main != null && Main.multiplayerSession.Client.IsConnected;
 
+        public void Awake()
+        {
+            NitroxServiceLocator.LifetimeScopeEnded += (_, _) => packetProcessorCache.Clear();
+            client = NitroxServiceLocator.LocateService<IClient>();
+            multiplayerSession = NitroxServiceLocator.LocateService<IMultiplayerSession>();
+            packetReceiver = NitroxServiceLocator.LocateService<PacketReceiver>();
+            throttledPacketSender = NitroxServiceLocator.LocateService<ThrottledPacketSender>();
+            terrain = NitroxServiceLocator.LocateService<GameLogic.Terrain>();
+
+            Main = this;
+            DontDestroyOnLoad(gameObject);
+
+            Log.Info("Multiplayer client loaded…");
+            Log.InGame(Language.main.Get("Nitrox_MultiplayerLoaded"));
+        }
+
+        public void Update()
+        {
+            client.PollEvents();
+
+            if (multiplayerSession.CurrentState.CurrentStage != MultiplayerSessionConnectionStage.DISCONNECTED)
+            {
+                ProcessPackets();
+                throttledPacketSender.Update();
+
+                // Loading up shouldn't be bothered by entities spawning in the surroundings
+                if (multiplayerSession.CurrentState.CurrentStage == MultiplayerSessionConnectionStage.SESSION_JOINED &&
+                    InitialSyncCompleted)
+                {
+                    terrain.UpdateVisibility();
+                }
+            }
+        }
+
         public static event Action OnBeforeMultiplayerStart;
         public static event Action OnAfterMultiplayerEnd;
+
+        public static void SubnauticaLoadingStarted()
+        {
+            OnBeforeMultiplayerStart?.Invoke();
+        }
 
         public static void SubnauticaLoadingCompleted()
         {
@@ -53,7 +96,6 @@ namespace NitroxClient.MonoBehaviours
         public static IEnumerator LoadAsync()
         {
             WaitScreen.ManualWaitItem worldSettleItem = WaitScreen.Add(Language.main.Get("Nitrox_WorldSettling"));
-            WaitScreen.ShowImmediately();
 
             yield return new WaitUntil(() => LargeWorldStreamer.main != null &&
                                              LargeWorldStreamer.main.land != null &&
@@ -71,53 +113,44 @@ namespace NitroxClient.MonoBehaviours
             SetLoadingComplete();
         }
 
-        public void Awake()
-        {
-            Log.InGame(Language.main.Get("Nitrox_MultiplayerLoaded"));
-
-            multiplayerSession = NitroxServiceLocator.LocateService<IMultiplayerSession>();
-            packetReceiver = NitroxServiceLocator.LocateService<PacketReceiver>();
-            throttledPacketSender = NitroxServiceLocator.LocateService<ThrottledPacketSender>();
-
-            Main = this;
-            DontDestroyOnLoad(gameObject);
-        }
-
-        public void Update()
-        {
-            if (multiplayerSession.CurrentState.CurrentStage != MultiplayerSessionConnectionStage.DISCONNECTED)
-            {
-                ProcessPackets();
-                throttledPacketSender.Update();
-            }
-        }
-
         public void ProcessPackets()
         {
-            Queue<Packet> packets = packetReceiver.GetReceivedPackets();
-
-            foreach (Packet packet in packets)
+            static PacketProcessor ResolveProcessor(Packet packet, Dictionary<Type, PacketProcessor> processorCache)
             {
+                Type packetType = packet.GetType();
+                if (processorCache.TryGetValue(packetType, out PacketProcessor processor))
+                {
+                    return processor;
+                }
+
                 try
                 {
-                    Type clientPacketProcessorType = typeof(ClientPacketProcessor<>);
-                    Type packetType = packet.GetType();
-                    Type packetProcessorType = clientPacketProcessorType.MakeGenericType(packetType);
-
-                    PacketProcessor processor = (PacketProcessor)NitroxServiceLocator.LocateService(packetProcessorType);
-                    processor.ProcessPacket(packet, null);
+                    Type packetProcessorType = typeof(ClientPacketProcessor<>).MakeGenericType(packetType);
+                    return processorCache[packetType] = (PacketProcessor)NitroxServiceLocator.LocateService(packetProcessorType);
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(ex, $"Error processing packet {packet}");
+                    Log.Error(ex, $"Failed to find packet processor for packet {packet}");
                 }
+
+                return null;
             }
+
+            packetReceiver.ConsumePackets(static (packet, processorCache) =>
+            {
+                try
+                {
+                    ResolveProcessor(packet, processorCache)?.ProcessPacket(packet, null);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, $"Error while processing packet {packet}");
+                }
+            }, packetProcessorCache);
         }
 
         public IEnumerator StartSession()
         {
-            DevConsole.RegisterConsoleCommand(this, "execute");
-            OnBeforeMultiplayerStart?.Invoke();
             yield return StartCoroutine(InitializeLocalPlayerState());
             multiplayerSession.JoinSession();
             InitMonoBehaviours();
@@ -129,11 +162,11 @@ namespace NitroxClient.MonoBehaviours
         {
             // Gameplay.
             gameObject.AddComponent<AnimationSender>();
-            gameObject.AddComponent<PlayerMovement>();
+            gameObject.AddComponent<PlayerMovementBroadcaster>();
             gameObject.AddComponent<PlayerDeathBroadcaster>();
             gameObject.AddComponent<PlayerStatsBroadcaster>();
             gameObject.AddComponent<EntityPositionBroadcaster>();
-            gameObject.AddComponent<ThrottledBuilder>();
+            gameObject.AddComponent<BuildingHandler>();
         }
 
         public void StopCurrentSession()
@@ -153,23 +186,16 @@ namespace NitroxClient.MonoBehaviours
 
         private static void SetLoadingComplete()
         {
-            PAXTerrainController.main.isWorking = false;
-            WaitScreen.main.Hide();
+            WaitScreen.main.isWaiting = false;
+            WaitScreen.main.stageProgress.Clear();
+            FreezeTime.End(FreezeTime.Id.WaitScreen);
             WaitScreen.main.items.Clear();
 
             PlayerManager remotePlayerManager = NitroxServiceLocator.LocateService<PlayerManager>();
 
             LoadingScreenVersionText.DisableWarningText();
             DiscordClient.InitializeRPInGame(Main.multiplayerSession.AuthenticationContext.Username, remotePlayerManager.GetTotalPlayerCount(), Main.multiplayerSession.SessionPolicy.MaxConnections);
-            NitroxServiceLocator.LocateService<PlayerChatManager>().LoadChatKeyHint();
-        }
-
-        private void OnConsoleCommand_execute(NotificationCenter.Notification n)
-        {
-            string[] args = new string[n.data.Values.Count];
-            n.data.Values.CopyTo(args, 0);
-
-            NitroxServiceLocator.LocateService<IPacketSender>().Send(new ServerCommand(args));
+            CoroutineHost.StartCoroutine(NitroxServiceLocator.LocateService<PlayerChatManager>().LoadChatKeyHint());
         }
 
         private IEnumerator InitializeLocalPlayerState()
@@ -177,9 +203,12 @@ namespace NitroxClient.MonoBehaviours
             ILocalNitroxPlayer localPlayer = NitroxServiceLocator.LocateService<ILocalNitroxPlayer>();
             IEnumerable<IColorSwapManager> colorSwapManagers = NitroxServiceLocator.LocateService<IEnumerable<IColorSwapManager>>();
 
+            // This is used to init the lazy GameObject in order to create a real default Body Prototype for other players
+            GameObject body = localPlayer.BodyPrototype;
+            Log.Info($"Init body prototype {body.name}");
+
             ColorSwapAsyncOperation swapOperation = new ColorSwapAsyncOperation(localPlayer, colorSwapManagers).BeginColorSwap();
             yield return new WaitUntil(() => swapOperation.IsColorSwapComplete());
-
             swapOperation.ApplySwappedColors();
 
             // UWE developers added noisy logging for non-whitelisted components during serialization.

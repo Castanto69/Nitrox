@@ -1,23 +1,26 @@
-﻿using System.Reflection;
-using HarmonyLib;
-using NitroxClient.GameLogic;
-using NitroxModel.Core;
+using System.Reflection;
+using NitroxClient.Communication.Abstract;
+using NitroxClient.MonoBehaviours;
 using NitroxModel.Helper;
+using NitroxModel.Packets;
 
-namespace NitroxPatcher.Patches.Dynamic
+namespace NitroxPatcher.Patches.Dynamic;
+
+public sealed partial class PDAEncyclopedia_Add_Patch : NitroxPatch, IDynamicPatch
 {
-    public class PDAEncyclopedia_Add_Patch : NitroxPatch, IDynamicPatch
-    {
-        private static readonly MethodInfo TARGET_METHOD = Reflect.Method(() => PDAEncyclopedia.Add(default(string), default(bool)));
+    private static readonly MethodInfo TARGET_METHOD = Reflect.Method(() => PDAEncyclopedia.Add(default, default, default));
 
-        public static void Prefix(string key)
+    public static void Postfix(string key, bool verbose, PDAEncyclopedia.EntryData __result)
+    {
+        if (!Multiplayer.Main || !Multiplayer.Main.InitialSyncCompleted)
         {
-            NitroxServiceLocator.LocateService<PDAEncyclopediaEntry>().Add(key);
+            return;
         }
 
-        public override void Patch(Harmony harmony)
+        // Is null when it's a duplicate call
+        if (__result != null)
         {
-            PatchPrefix(harmony, TARGET_METHOD);
+            Resolve<IPacketSender>().Send(new PDAEncyclopediaEntryAdd(key, verbose));
         }
     }
 }

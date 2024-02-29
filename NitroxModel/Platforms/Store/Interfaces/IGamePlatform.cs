@@ -1,5 +1,5 @@
 ﻿using System.Threading.Tasks;
-using NitroxModel.Discovery;
+using NitroxModel.Discovery.Models;
 using NitroxModel.Platforms.OS.Shared;
 
 namespace NitroxModel.Platforms.Store.Interfaces
@@ -8,7 +8,7 @@ namespace NitroxModel.Platforms.Store.Interfaces
     {
         string Name { get; }
 
-        Platform platform { get; }
+        Platform Platform { get; }
         
         /// <summary>
         ///     Tries to start the platform and waits for it to be ready to launch games. If it has already been started it will return true.

@@ -1,11 +1,16 @@
-﻿using NitroxClient.Communication.Abstract;
+using NitroxClient.Communication;
+using NitroxClient.Communication.Abstract;
 using NitroxClient.GameLogic.Helper;
+using NitroxClient.GameLogic.PlayerLogic;
+using NitroxClient.GameLogic.Spawning.Metadata;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.Unity.Helper;
 using NitroxModel.DataStructures;
-using NitroxModel.DataStructures.GameLogic;
+using NitroxModel.DataStructures.GameLogic.Entities;
+using NitroxModel.DataStructures.GameLogic.Entities.Metadata;
 using NitroxModel.DataStructures.Util;
 using NitroxModel.Packets;
+using NitroxModel_Subnautica.DataStructures;
 using UnityEngine;
 
 namespace NitroxClient.GameLogic
@@ -13,42 +18,36 @@ namespace NitroxClient.GameLogic
     public class ItemContainers
     {
         private readonly IPacketSender packetSender;
+        private readonly EntityMetadataManager entityMetadataManager;
 
-        public ItemContainers(IPacketSender packetSender)
+        public ItemContainers(IPacketSender packetSender, EntityMetadataManager entityMetadataManager)
         {
             this.packetSender = packetSender;
+            this.entityMetadataManager = entityMetadataManager;
         }
 
         public void BroadcastItemAdd(Pickupable pickupable, Transform containerTransform)
         {
-            NitroxId itemId = NitroxEntity.GetId(pickupable.gameObject);
-            byte[] bytes = SerializationHelper.GetBytesWithoutParent(pickupable.gameObject);
-            NitroxId ownerId = InventoryContainerHelper.GetOwnerId(containerTransform);
-
-            ItemData itemData;
-            Plantable plant = pickupable.GetComponent<Plantable>();
-            if (plant && plant.currentPlanter)
+            // We don't want to broadcast that event if it's from another player's inventory
+            if (containerTransform.GetComponentInParent<RemotePlayerIdentifier>(true))
             {
-                // special case: we want to remember the time when the plant was added, so we can simulate growth
-                itemData = new PlantableItemData(ownerId, itemId, bytes, DayNightCycle.main.timePassedAsDouble);
-            }
-            else
-            {
-                itemData = new ItemData(ownerId, itemId, bytes);
+                return;
             }
 
-            if (packetSender.Send(new ItemContainerAdd(itemData)))
+            if (!pickupable.TryGetIdOrWarn(out NitroxId itemId))
             {
-                Log.Debug($"Sent: Added item {pickupable.GetTechType()} to container {containerTransform.gameObject.GetFullHierarchyPath()}");
+                return;
             }
-        }
 
-        public void BroadcastItemRemoval(Pickupable pickupable, Transform containerTransform)
-        {
-            NitroxId itemId = NitroxEntity.GetId(pickupable.gameObject);
-            if (packetSender.Send(new ItemContainerRemove(InventoryContainerHelper.GetOwnerId(containerTransform), itemId)))
+            if (!InventoryContainerHelper.TryGetOwnerId(containerTransform, out NitroxId ownerId))
             {
-                Log.Debug($"Sent: Removed item {pickupable.GetTechType()} from container {containerTransform.gameObject.GetFullHierarchyPath()}");
+                // Error logging is done in the function
+                return;
+            }
+            
+            if (packetSender.Send(new EntityReparented(itemId, ownerId)))
+            {
+                Log.Debug($"Sent: Added item ({itemId}) of type {pickupable.GetTechType()} to container {containerTransform.gameObject.GetFullHierarchyPath()}");
             }
         }
 
@@ -69,31 +68,31 @@ namespace NitroxClient.GameLogic
 
             ItemsContainer container = opContainer.Value;
             Pickupable pickupable = item.RequireComponent<Pickupable>();
-            using (packetSender.Suppress<ItemContainerAdd>())
+
+            using (PacketSuppressor<EntityReparented>.Suppress())
             {
                 container.UnsafeAdd(new InventoryItem(pickupable));
                 Log.Debug($"Received: Added item {pickupable.GetTechType()} to container {owner.Value.GetFullHierarchyPath()}");
             }
         }
 
-        public void RemoveItem(NitroxId ownerId, NitroxId itemId)
+        public void BroadcastBatteryAdd(GameObject gameObject, GameObject parent, TechType techType)
         {
-            GameObject owner = NitroxEntity.RequireObjectFrom(ownerId);
-            GameObject item = NitroxEntity.RequireObjectFrom(itemId);
-            Optional<ItemsContainer> opContainer = InventoryContainerHelper.TryGetContainerByOwner(owner);
-            if (!opContainer.HasValue)
+            if (!gameObject.TryGetIdOrWarn(out NitroxId id))
             {
-                Log.Error($"Could not find item container behaviour on object {owner.GetFullHierarchyPath()} with id {ownerId}");
+                return;
+            }
+            if (!parent.TryGetIdOrWarn(out NitroxId parentId))
+            {
                 return;
             }
 
-            ItemsContainer container = opContainer.Value;
-            Pickupable pickupable = item.RequireComponent<Pickupable>();
-            using (packetSender.Suppress<ItemContainerRemove>())
-            {
-                container.RemoveItem(pickupable, true);
-                Log.Debug($"Received: Removed item {pickupable.GetTechType()} to container {owner.GetFullHierarchyPath()}");
-            }
+            Optional<EntityMetadata> metadata = entityMetadataManager.Extract(gameObject);
+
+            InstalledBatteryEntity installedBattery = new(id, techType.ToDto(), metadata.OrNull(), parentId, new());
+
+            EntitySpawnedByClient spawnedPacket = new EntitySpawnedByClient(installedBattery);
+            packetSender.Send(spawnedPacket);
         }
     }
 }

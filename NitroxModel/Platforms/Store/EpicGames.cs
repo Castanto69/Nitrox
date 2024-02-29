@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Threading.Tasks;
-using NitroxModel.Discovery;
+using NitroxModel.Discovery.Models;
 using NitroxModel.Helper;
 using NitroxModel.Platforms.OS.Shared;
 using NitroxModel.Platforms.Store.Interfaces;
@@ -14,7 +14,7 @@ namespace NitroxModel.Platforms.Store
         public static EpicGames Instance => instance ??= new EpicGames();
 
         public string Name => "Epic Games Store";
-        public Platform platform => Platform.EPIC;
+        public Platform Platform => Platform.EPIC;
 
         public bool OwnsGame(string gameDirectory)
         {

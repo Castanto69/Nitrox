@@ -1,37 +1,38 @@
-﻿using NitroxModel.DataStructures.GameLogic;
-using NitroxModel.DataStructures.Util;
+using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.Packets;
 using NitroxServer.Communication.Packets.Processors.Abstract;
 using NitroxServer.GameLogic;
-using NitroxServer.GameLogic.Vehicles;
+using NitroxServer.GameLogic.Entities;
 
-namespace NitroxServer.Communication.Packets.Processors
+namespace NitroxServer.Communication.Packets.Processors;
+
+public class VehicleDockingProcessor : AuthenticatedPacketProcessor<VehicleDocking>
 {
-    class VehicleDockingProcessor : AuthenticatedPacketProcessor<VehicleDocking>
+    private readonly PlayerManager playerManager;
+    private readonly EntityRegistry entityRegistry;
+
+    public VehicleDockingProcessor(PlayerManager playerManager, EntityRegistry entityRegistry)
     {
-        private readonly PlayerManager playerManager;
-        private readonly VehicleManager vehicleManager;
+        this.playerManager = playerManager;
+        this.entityRegistry = entityRegistry;
+    }
 
-        public VehicleDockingProcessor(PlayerManager playerManager, VehicleManager vehicleManager)
+    public override void Process(VehicleDocking packet, Player player)
+    {
+        if (!entityRegistry.TryGetEntityById(packet.VehicleId, out Entity vehicleEntity))
         {
-            this.playerManager = playerManager;
-            this.vehicleManager = vehicleManager;
+            Log.Error($"Unable to find vehicle to dock {packet.VehicleId}");
+            return;
         }
 
-        public override void Process(VehicleDocking packet, Player player)
+        if (!entityRegistry.TryGetEntityById(packet.DockId, out Entity dockEntity))
         {
-            Optional<VehicleModel> vehicle = vehicleManager.GetVehicleModel(packet.VehicleId);
-
-            if (!vehicle.HasValue)
-            {
-                Log.Error($"VehicleDocking received for vehicle id {packet.VehicleId} that does not exist!");
-                return;
-            }
-
-            VehicleModel vehicleModel = vehicle.Value;
-            vehicleModel.DockingBayId = Optional.Of(packet.DockId);
-
-            playerManager.SendPacketToOtherPlayers(packet, player);
+            Log.Error($"Unable to find dock {packet.DockId} for docking vehicle {packet.VehicleId}");
+            return;
         }
+
+        entityRegistry.ReparentEntity(vehicleEntity, dockEntity);
+
+        playerManager.SendPacketToOtherPlayers(packet, player);
     }
 }
